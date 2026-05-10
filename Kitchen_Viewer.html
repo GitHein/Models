@@ -7,8 +7,8 @@
     <style>
         body { margin:0; overflow:hidden; font-family:Arial, sans-serif; background:#0f0f0f; color:#eee; }
         #ui {
-            position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.9); 
-            padding: 12px; border-radius: 10px; width: 280px; z-index: 100; 
+            position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.92); 
+            padding: 12px; border-radius: 10px; width: 300px; z-index: 100; 
             max-height: 92vh; overflow-y: auto; font-size: 14px;
         }
         .section { margin: 12px 0; padding: 10px; background: rgba(255,255,255,0.07); border-radius: 8px; }
@@ -19,8 +19,10 @@
             width: 100%; aspect-ratio: 1; background-size: cover; background-position: center; 
             border: 2px solid #555; border-radius: 4px; cursor: pointer;
         }
-        .texture-btn:active { border-color: #0f0; }
-        #status { font-size: 12px; color: #0a0; }
+        .model-option { padding: 8px; background: rgba(255,255,255,0.05); margin: 4px 0; border-radius: 6px; cursor: pointer; }
+        .model-option:hover { background: rgba(255,255,255,0.15); }
+        .model-option.selected { background: #0a0; border: 1px solid #0f0; }
+        small { color: #aaa; }
     </style>
 </head>
 <body>
@@ -30,11 +32,9 @@
         <small id="modelName" style="color:#aaa;">Loading model list...</small>
         
         <div class="section">
-            <label><strong>Select Model (.glb)</strong></label>
-            <select id="modelSelect" onchange="loadSelectedModel()"></select>
-            <button onclick="loadSelectedModel()">Load Selected Model</button>
-            <button onclick="refreshModelList()">Refresh List</button>
-            <small id="status"></small>
+            <label><strong>Select Project</strong></label>
+            <div id="modelList"></div>
+            <button onclick="refreshModelList()" style="margin-top:8px;">↻ Refresh List</button>
         </div>
 
         <div class="section">
@@ -97,60 +97,45 @@
         let scene, camera, renderer, controls, selectedMesh, hemiLight, dirLight;
         let currentModel = new URLSearchParams(window.location.search).get('model') || 'scene.glb';
 
-        const GITHUB_USER = "githein";
-        const GITHUB_REPO = "Models";           // Change if your repo name is different
-        const GITHUB_PATH = "";                  // Leave empty if .glb files are in root
         let currentTextureMap = {};
 
         document.getElementById('modelName').textContent = "📦 " + currentModel;
 
-        async function fetchModelList() {
-            const status = document.getElementById('status');
-            status.textContent = "Fetching models from GitHub...";
-            
+        async function loadModelsJSON() {
             try {
-                let url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${GITHUB_PATH}`;
-                const response = await fetch(url);
-                if (!response.ok) throw new Error("Failed to fetch");
-                
-                const files = await response.json();
-                const glbFiles = files
-                    .filter(f => f.name.toLowerCase().endswith('.glb'))
-                    .map(f => f.name)
-                    .sort();
-
-                populateModelDropdown(glbFiles);
-                status.textContent = `${glbFiles.length} models found`;
-                return glbFiles;
+                const res = await fetch('models.json');
+                if (!res.ok) throw new Error("models.json not found");
+                const data = await res.json();
+                populateModelList(data.models);
             } catch (err) {
                 console.error(err);
-                status.textContent = "❌ Could not load list (API limit or private repo?)";
+                document.getElementById('modelList').innerHTML = 
+                    `<p style="color:#f66;">Could not load models.json</p>`;
             }
         }
 
-        function populateModelDropdown(glbFiles) {
-            const select = document.getElementById('modelSelect');
-            select.innerHTML = '';
-            
-            glbFiles.forEach(file => {
-                const option = document.createElement('option');
-                option.value = file;
-                option.textContent = file;
-                if (file === currentModel) option.selected = true;
-                select.appendChild(option);
+        function populateModelList(models) {
+            const container = document.getElementById('modelList');
+            container.innerHTML = '';
+
+            models.forEach(model => {
+                const div = document.createElement('div');
+                div.className = 'model-option';
+                if (model.file === currentModel) div.classList.add('selected');
+
+                div.innerHTML = `
+                    <strong>${model.name}</strong><br>
+                    <small>${model.file} • ${model.unitCount} units • ${model.timestamp}</small>
+                `;
+                div.onclick = () => {
+                    window.location.href = `?model=${encodeURIComponent(model.file)}`;
+                };
+                container.appendChild(div);
             });
         }
 
-        function loadSelectedModel() {
-            const select = document.getElementById('modelSelect');
-            const model = select.value;
-            if (model) {
-                window.location.href = `?model=${encodeURIComponent(model)}`;
-            }
-        }
-
         function refreshModelList() {
-            fetchModelList();
+            loadModelsJSON();
         }
 
         // Sample Textures (you can add more URLs here)
@@ -243,7 +228,7 @@
 
             setupListeners();
             createTextureButtons();
-            fetchModelList();           // ← Fetch list from GitHub
+            loadModelsJSON();        // ← Load from models.json
             animate();
         }
 
