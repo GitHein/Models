@@ -1,0 +1,39 @@
+{
+  "scenes": [
+    {
+      "id": "Gabriel_Kombuis",
+      "name": "Gabriel_Kombuis",
+      "file": "Gabriel_Kombuis.glb",
+      "timestamp": "2026-05-08",
+      "unitCount": 12
+    },
+    {
+      "id": "Gabriel_Sauna",
+      "name": "Gabriel_Sauna",
+      "file": "Gabriel_Sauna.glb",
+      "timestamp": "2026-05-08",
+      "unitCount": 15
+    },
+    {
+      "id": "Heidi",
+      "name": "Heidi",
+      "file": "Heidi.glb",
+      "timestamp": "2026-05-07",
+      "unitCount": 5
+    },
+    {
+      "id": "TEST",
+      "name": "Bathroom Vanity",
+      "file": "karkitchen.json",
+      "timestamp": "2026-05-07",
+      "unitCount": 5
+    },
+    {
+      "id": "Default",
+      "name": "Default",
+      "file": "scene.glb",
+      "timestamp": "2026-05-07",
+      "unitCount": 5
+    }
+  ]
+}
