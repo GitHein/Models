@@ -8,26 +8,54 @@
         body { margin:0; overflow:hidden; font-family:Arial, sans-serif; background:#0f0f0f; color:#eee; }
         #ui {
             position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.9); 
-            padding: 12px; border-radius: 10px; width: 260px; z-index: 100; 
-            max-height: 88vh; overflow-y: auto; font-size: 14px;
+            padding: 12px; border-radius: 10px; width: 280px; z-index: 100; 
+            max-height: 92vh; overflow-y: auto; font-size: 14px;
         }
         .section { margin: 12px 0; padding: 10px; background: rgba(255,255,255,0.07); border-radius: 8px; }
         label { display:block; margin: 6px 0 3px; font-size: 13px; }
-        input[type="range"] { width: 100%; }
-        button { width:100%; padding:9px; margin:4px 0; font-size:14px; border-radius:6px; }
-        .presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+        input[type="range"], select, button { width:100%; padding:9px; margin:4px 0; font-size:14px; border-radius:6px; }
+        .texture-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+        .texture-btn { 
+            width: 100%; aspect-ratio: 1; background-size: cover; background-position: center; 
+            border: 2px solid #555; border-radius: 4px; cursor: pointer;
+        }
+        .texture-btn:active { border-color: #0f0; }
+        #status { font-size: 12px; color: #0a0; }
     </style>
 </head>
 <body>
     <div id="ui">
         <h2 style="margin:0 0 8px 0;">🎨 IdealKitchens <br>
         Hein 📡 079 999 2215</h2>
-        <small id="modelName" style="color:#aaa;">Loading...</small>
+        <small id="modelName" style="color:#aaa;">Loading model list...</small>
         
+        <div class="section">
+            <label><strong>Select Model (.glb)</strong></label>
+            <select id="modelSelect" onchange="loadSelectedModel()"></select>
+            <button onclick="loadSelectedModel()">Load Selected Model</button>
+            <button onclick="refreshModelList()">Refresh List</button>
+            <small id="status"></small>
+        </div>
+
         <div class="section">
             <input type="color" id="colorPicker" value="#e8d5b8" style="height:45px;width:100%;">
             <button id="applyColor">Apply Color</button>
             <button id="resetColors">Reset Colors</button>
+            <button id="resetMaterial">Reset Material</button>
+        </div>
+
+        <div class="section">
+            <h3>Textures + Normal Maps</h3>
+            <div class="texture-grid" id="textureGrid"></div>
+        </div>
+
+        <div class="section">
+            <h3>PBR Controls</h3>
+            <label>Roughness <span id="roughVal">0.65</span></label>
+            <input type="range" id="roughness" min="0" max="1" step="0.01" value="0.65">
+
+            <label>Metalness <span id="metalVal">0.1</span></label>
+            <input type="range" id="metalness" min="0" max="1" step="0.01" value="0.1">
         </div>
 
         <div class="section">
@@ -67,9 +95,121 @@
 
     <script>
         let scene, camera, renderer, controls, selectedMesh, hemiLight, dirLight;
+        let currentModel = new URLSearchParams(window.location.search).get('model') || 'scene.glb';
 
-        const currentModel = new URLSearchParams(window.location.search).get('model') || 'scene.glb';
+        const GITHUB_USER = "githein";
+        const GITHUB_REPO = "Models";           // Change if your repo name is different
+        const GITHUB_PATH = "";                  // Leave empty if .glb files are in root
+        let currentTextureMap = {};
+
         document.getElementById('modelName').textContent = "📦 " + currentModel;
+
+        async function fetchModelList() {
+            const status = document.getElementById('status');
+            status.textContent = "Fetching models from GitHub...";
+            
+            try {
+                let url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${GITHUB_PATH}`;
+                const response = await fetch(url);
+                if (!response.ok) throw new Error("Failed to fetch");
+                
+                const files = await response.json();
+                const glbFiles = files
+                    .filter(f => f.name.toLowerCase().endswith('.glb'))
+                    .map(f => f.name)
+                    .sort();
+
+                populateModelDropdown(glbFiles);
+                status.textContent = `${glbFiles.length} models found`;
+                return glbFiles;
+            } catch (err) {
+                console.error(err);
+                status.textContent = "❌ Could not load list (API limit or private repo?)";
+            }
+        }
+
+        function populateModelDropdown(glbFiles) {
+            const select = document.getElementById('modelSelect');
+            select.innerHTML = '';
+            
+            glbFiles.forEach(file => {
+                const option = document.createElement('option');
+                option.value = file;
+                option.textContent = file;
+                if (file === currentModel) option.selected = true;
+                select.appendChild(option);
+            });
+        }
+
+        function loadSelectedModel() {
+            const select = document.getElementById('modelSelect');
+            const model = select.value;
+            if (model) {
+                window.location.href = `?model=${encodeURIComponent(model)}`;
+            }
+        }
+
+        function refreshModelList() {
+            fetchModelList();
+        }
+
+        // Sample Textures (you can add more URLs here)
+        const textures = [
+            {name:"Oak Light",   diff:"https://picsum.photos/id/1015/512/512", normal:"https://picsum.photos/id/1015/512/512?blur=1"},
+            {name:"Walnut",      diff:"https://picsum.photos/id/1016/512/512", normal:"https://picsum.photos/id/1016/512/512?blur=1"},
+            {name:"Marble",      diff:"https://picsum.photos/id/201/512/512",  normal:"https://picsum.photos/id/201/512/512?blur=2"},
+            {name:"Concrete",    diff:"https://picsum.photos/id/251/512/512",  normal:"https://picsum.photos/id/251/512/512?blur=1"},
+            {name:"Fabric",      diff:"https://picsum.photos/id/201/512/512",  normal:"https://picsum.photos/id/133/512/512?blur=3"},
+            {name:"Brushed Metal", diff:"https://picsum.photos/id/316/512/512", normal:"https://picsum.photos/id/316/512/512?blur=1"},
+        ];
+
+        function createTextureButtons() {
+            const grid = document.getElementById('textureGrid');
+            textures.forEach(tex => {
+                const btn = document.createElement('div');
+                btn.className = 'texture-btn';
+                //btn.style.backgroundImage = `url(${tex.url})`;
+                btn.style.backgroundImage = `url(${tex.diff})`;
+                btn.title = tex.name;
+                //btn.onclick = () => applyTexture(tex.url);
+                btn.onclick = () => applyPBRMaterial(tex.diff, tex.normal)
+                grid.appendChild(btn);
+            });
+        }
+
+        function applyPBRMaterial(diffuseUrl, normalUrl) {
+            if (!selectedMesh || !selectedMesh.material) {
+                alert("Please select an object first!");
+                return;
+            }
+
+            const loader = new THREE.TextureLoader();
+
+            loader.load(diffuseUrl, (diffuseTex) => {
+                diffuseTex.wrapS = diffuseTex.wrapT = THREE.RepeatWrapping;
+                diffuseTex.repeat.set(3, 3);
+
+                loader.load(normalUrl, (normalTex) => {
+                    normalTex.wrapS = normalTex.wrapT = THREE.RepeatWrapping;
+                    normalTex.repeat.set(3, 3);
+
+                    // Use MeshStandardMaterial for proper PBR
+                    const newMat = new THREE.MeshStandardMaterial({
+                        map: diffuseTex,
+                        normalMap: normalTex,
+                        normalScale: new THREE.Vector2(1.5, 1.5),
+                        roughness: 0.65,
+                        metalness: 0.1
+                    });
+
+                    if (selectedMesh.material) selectedMesh.material.dispose();
+                    selectedMesh.material = newMat;
+                });
+            });
+        }
+
+        //const currentModel = new URLSearchParams(window.location.search).get('model') || 'scene.glb';
+        //document.getElementById('modelName').textContent = "📦 " + currentModel;
 
         function init() {
             scene = new THREE.Scene();
@@ -96,9 +236,14 @@
             dirLight.castShadow = true;
             scene.add(dirLight);
 
-            new THREE.GLTFLoader().load(currentModel, (gltf) => scene.add(gltf.scene));
+            // Load current model
+            new THREE.GLTFLoader().load(currentModel, (gltf) => {
+                scene.add(gltf.scene);
+            }, undefined, (e) => console.error(e));
 
             setupListeners();
+            createTextureButtons();
+            fetchModelList();           // ← Fetch list from GitHub
             animate();
         }
 
@@ -112,8 +257,13 @@
                 document.getElementById(id).addEventListener('input', updateLighting);
             });
 
+            // PBR Sliders
+            document.getElementById('roughness').addEventListener('input', updatePBR);
+            document.getElementById('metalness').addEventListener('input', updatePBR);
+
             document.getElementById('applyColor').addEventListener('click', applyColor);
             document.getElementById('resetColors').addEventListener('click', resetColors);
+            document.getElementById('resetMaterial').addEventListener('click', resetMaterial);
             document.getElementById('resetAll').addEventListener('click', resetAllLighting);
         }
 
@@ -160,8 +310,35 @@
             }
         }
 
+        //function applyColor() {
+        //    if (selectedMesh?.material) selectedMesh.material.color.set(document.getElementById('colorPicker').value);
+        //}
+
         function applyColor() {
-            if (selectedMesh?.material) selectedMesh.material.color.set(document.getElementById('colorPicker').value);
+            if (selectedMesh?.material) {
+                selectedMesh.material.color.set(document.getElementById('colorPicker').value);
+                if (selectedMesh.material.map) selectedMesh.material.map = null;
+            }
+        }
+
+        function updatePBR() {
+            if (!selectedMesh || !selectedMesh.material) return;
+            selectedMesh.material.roughness = parseFloat(document.getElementById('roughness').value);
+            selectedMesh.material.metalness = parseFloat(document.getElementById('metalness').value);
+            document.getElementById('roughVal').textContent = selectedMesh.material.roughness.toFixed(2);
+            document.getElementById('metalVal').textContent = selectedMesh.material.metalness.toFixed(2);
+        }
+
+        function resetMaterial() {
+            scene.traverse((obj) => {
+                if (obj.material) {
+                    obj.material.color.set(0xeeeeee);
+                    obj.material.map = null;
+                    obj.material.normalMap = null;
+                    obj.material.roughness = 0.7;
+                    obj.material.metalness = 0.1;
+                }
+            });
         }
 
         function resetColors() {
