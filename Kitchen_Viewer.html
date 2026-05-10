@@ -6,11 +6,21 @@
     <title>Kitchen Configurator</title>
     <style>
         body { margin:0; overflow:hidden; font-family:Arial, sans-serif; background:#0f0f0f; color:#eee; }
+        
         #ui {
             position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.92); 
             padding: 12px; border-radius: 10px; width: 300px; z-index: 100; 
             max-height: 92vh; overflow-y: auto; font-size: 14px;
+            transition: all 0.3s ease;
         }
+        #toggleUI {
+            position: absolute; top: 12px; right: 12px; z-index: 200;
+            background: rgba(0,0,0,0.8); color: #fff; border: none; 
+            width: 40px; height: 40px; border-radius: 50%; font-size: 20px;
+            cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+        }
+        #toggleUI:hover { background: rgba(0,0,0,0.95); }
+        
         .section { margin: 12px 0; padding: 10px; background: rgba(255,255,255,0.07); border-radius: 8px; }
         label { display:block; margin: 6px 0 3px; font-size: 13px; }
         input[type="range"], select, button { width:100%; padding:9px; margin:4px 0; font-size:14px; border-radius:6px; }
@@ -22,10 +32,11 @@
         .model-option { padding: 8px; background: rgba(255,255,255,0.05); margin: 4px 0; border-radius: 6px; cursor: pointer; }
         .model-option:hover { background: rgba(255,255,255,0.15); }
         .model-option.selected { background: #0a0; border: 1px solid #0f0; }
-        small { color: #aaa; }
     </style>
 </head>
 <body>
+    <button id="toggleUI" title="Toggle UI">👁</button>
+
     <div id="ui">
         <h2 style="margin:0 0 8px 0;">🎨 IdealKitchens <br>
         Hein 📡 079 999 2215</h2>
@@ -96,11 +107,31 @@
     <script>
         let scene, camera, renderer, controls, selectedMesh, hemiLight, dirLight;
         let currentModel = new URLSearchParams(window.location.search).get('model') || 'scene.glb';
+        let uiVisible = true;
 
         let currentTextureMap = {};
 
         document.getElementById('modelName').textContent = "📦 " + currentModel;
 
+        // UI Toggle
+        function toggleUI() {
+            uiVisible = !uiVisible;
+            const ui = document.getElementById('ui');
+            const btn = document.getElementById('toggleUI');
+            
+            if (uiVisible) {
+                ui.style.display = 'block';
+                btn.textContent = '👁';
+                btn.title = 'Hide UI';
+            } else {
+                ui.style.display = 'none';
+                btn.textContent = '☰';
+                btn.title = 'Show UI';
+            }
+        }
+
+        document.getElementById('toggleUI').addEventListener('click', toggleUI);
+        
         async function loadModelsJSON() {
             try {
                 const res = await fetch('models.json');
