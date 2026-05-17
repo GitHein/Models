@@ -21,6 +21,34 @@
       "timestamp": "2026-05-17",
       "unitCount": 28
     },
+     {
+      "id": "Dore_Batchelor",
+      "name": "Dore_Batchelor",
+      "file": "Dore_Batchelor.glb",
+      "timestamp": "2026-05-07",
+      "unitCount": 9
+    },
+    {
+      "id": "Dore_Buite_Kombuis",
+      "name": "Dore_Buite_Kombuis",
+      "file": "Dore_Buite_Kombuis.glb",
+      "timestamp": "2026-05-07",
+      "unitCount": 8
+    },
+    {
+      "id": "Dore_Binne_Kombuis",
+      "name": "Dore_Binne_Kombuis",
+      "file": "Dore_Binne_Kombuis.glb",
+      "timestamp": "2026-05-07",
+      "unitCount": 8
+    },
+    {
+      "id": "Dore_Linne",
+      "name": "Dore_Linne",
+      "file": "Dore_Linne.glb",
+      "timestamp": "2026-05-07",
+      "unitCount": 8
+    },
     {
       "id": "Heidi",
       "name": "Heidi",
