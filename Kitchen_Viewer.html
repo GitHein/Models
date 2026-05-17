@@ -20,6 +20,16 @@
             cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,0.5);
         }
         #toggleUI:hover { background: rgba(0,0,0,0.95); }
+        .dimension-label {
+            color: #fff;
+            background: rgba(128, 128, 128, 0.95); /* Changed to grey and almost completely opaque */
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            pointer-events: none;
+            white-space: pre-line; 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2); /* Softened shadow for a cleaner look */
+        }
         
         .section { margin: 12px 0; padding: 10px; background: rgba(255,255,255,0.07); border-radius: 8px; }
         label { display:block; margin: 6px 0 3px; font-size: 13px; }
@@ -32,6 +42,28 @@
         .model-option { padding: 8px; background: rgba(255,255,255,0.05); margin: 4px 0; border-radius: 6px; cursor: pointer; }
         .model-option:hover { background: rgba(255,255,255,0.15); }
         .model-option.selected { background: #0a0; border: 1px solid #0f0; }
+
+        .model-list-scroll {
+            max-height: 210px;           /* Shows roughly 3 entries */
+            overflow-y: auto;
+            overflow-x: hidden;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 6px;
+            padding: 4px;
+            background: rgba(0,0,0,0.3);
+        }
+
+        /* Optional: nicer scrollbar styling */
+        .model-list-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+        .model-list-scroll::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.3);
+            border-radius: 3px;
+        }
+        .model-list-scroll::-webkit-scrollbar-thumb:hover {
+            background: rgba(255,255,255,0.5);
+        }
     </style>
 </head>
 <body>
@@ -44,7 +76,7 @@
         
         <div class="section">
             <label><strong>Select Project</strong></label>
-            <div id="modelList"></div>
+            <div id="modelList" class="model-list-scroll"></div>
             <button onclick="refreshModelList()" style="margin-top:8px;">↻ Refresh List</button>
         </div>
 
@@ -103,9 +135,12 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/loaders/GLTFLoader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/renderers/CSS2DRenderer.js"></script>
+
 
     <script>
-        let scene, camera, renderer, controls, selectedMesh, hemiLight, dirLight;
+        
+        let scene, camera, renderer, controls, selectedMesh, hemiLight, dirLight, labelRenderer;
         let currentModel = new URLSearchParams(window.location.search).get('model') || 'scene.glb';
         let uiVisible = true;
 
@@ -145,7 +180,7 @@
             }
         }
 
-        function populateModelList(models) {
+        function populateModelListOld(models) {
             const container = document.getElementById('modelList');
             container.innerHTML = '';
 
@@ -161,6 +196,32 @@
                 div.onclick = () => {
                     window.location.href = `?model=${encodeURIComponent(model.file)}`;
                 };
+                container.appendChild(div);
+            });
+        }
+        function populateModelList(models) {
+            const container = document.getElementById('modelList');
+            container.innerHTML = '';
+
+            if (models.length === 0) {
+                container.innerHTML = `<p style="color:#888; text-align:center; padding:20px;">No projects found</p>`;
+                return;
+            }
+
+            models.forEach(model => {
+                const div = document.createElement('div');
+                div.className = 'model-option';
+                if (model.file === currentModel) div.classList.add('selected');
+
+                div.innerHTML = `
+                    <strong>${model.name}</strong><br>
+                    <small>${model.file} • ${model.unitCount} units • ${model.timestamp}</small>
+                `;
+
+                div.onclick = () => {
+                    window.location.href = `?model=${encodeURIComponent(model.file)}`;
+                };
+
                 container.appendChild(div);
             });
         }
@@ -224,12 +285,9 @@
             });
         }
 
-        //const currentModel = new URLSearchParams(window.location.search).get('model') || 'scene.glb';
-        //document.getElementById('modelName').textContent = "📦 " + currentModel;
-
         function init() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x111111);
+            scene.background = new THREE.Color(0xBCC8C6);
 
             camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 300);
             camera.position.set(5, 3, 7);
@@ -238,8 +296,17 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.shadowMap.enabled = true;
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            renderer.toneMappingExposure = 0.85;
+            renderer.toneMappingExposure = 0.85;//0.85
+            
             document.body.appendChild(renderer.domElement);
+
+           // CSS2D Renderer for sharp labels
+            labelRenderer = new THREE.CSS2DRenderer();
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.domElement.style.position = 'absolute';
+            labelRenderer.domElement.style.top = '0px';
+            labelRenderer.domElement.style.pointerEvents = 'none';
+            document.body.appendChild(labelRenderer.domElement);
 
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
@@ -252,10 +319,47 @@
             dirLight.castShadow = true;
             scene.add(dirLight);
 
-            // Load current model
-            new THREE.GLTFLoader().load(currentModel, (gltf) => {
-                scene.add(gltf.scene);
-            }, undefined, (e) => console.error(e));
+            // Load GLB - use URL parameter or default
+            const modelToLoad = currentModel || 'scene.glb';
+            document.getElementById('modelName').textContent = "📦 " + modelToLoad;
+
+            new THREE.GLTFLoader().load(modelToLoad, (gltf) => {
+                const model = gltf.scene;
+                scene.add(model);
+
+                // Add dimension labels
+                model.traverse((child) => {
+                        
+                    // Ensure rough kitchen materials handle light smoothly
+                    if(child.material) {
+                        child.material.envMapIntensity = 1.0; 
+                        // Ensure the material isn't completely flat white
+                        if (child.material.color.getHex() === 0xffffff) {
+                            child.material.color.setHex(0xf5f5f5); // Soft off-white shows details better than pure blinding white
+                        }
+                    }
+
+                    if (child.userData && child.userData.unit_label) {
+                        const div = document.createElement('div');
+                        div.className = 'dimension-label';
+                        
+                        // FOUR backslashes are required here so Python outputs exactly TWO to the HTML file
+                        div.textContent = child.userData.unit_label.replace(/\\n/g, '\n');
+
+                        const label = new THREE.CSS2DObject(div);
+                        label.position.set(0, 0.1, 0);   // slightly above the empty
+                        child.add(label);
+                    }
+                });
+            }, undefined, (e) => {
+                console.error("Failed to load", currentModel, e);
+                // Optional fallback
+                if (currentModel !== 'scene.glb') {
+                    new THREE.GLTFLoader().load('scene.glb', (gltf) => {
+                        scene.add(gltf.scene);
+                    }, undefined, (e) => console.error(e));
+                }
+            });
 
             setupListeners();
             createTextureButtons();
@@ -326,10 +430,6 @@
             }
         }
 
-        //function applyColor() {
-        //    if (selectedMesh?.material) selectedMesh.material.color.set(document.getElementById('colorPicker').value);
-        //}
-
         function applyColor() {
             if (selectedMesh?.material) {
                 selectedMesh.material.color.set(document.getElementById('colorPicker').value);
@@ -384,12 +484,14 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
         }
 
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
             renderer.render(scene, camera);
+            labelRenderer.render(scene, camera);
         }
 
         init();

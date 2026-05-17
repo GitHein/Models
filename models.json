@@ -11,8 +11,15 @@
       "id": "Gabriel_Sauna",
       "name": "Gabriel_Sauna",
       "file": "Gabriel_Sauna.glb",
-      "timestamp": "2026-05-08",
+      "timestamp": "2026-05-09",
       "unitCount": 15
+    },
+    {
+      "id": "Analise_V1",
+      "name": "Analise_V1",
+      "file": "Analise_V1.glb",
+      "timestamp": "2026-05-17",
+      "unitCount": 28
     },
     {
       "id": "Heidi",
@@ -22,17 +29,10 @@
       "unitCount": 5
     },
     {
-      "id": "TEST",
-      "name": "Bathroom Vanity",
-      "file": "karkitchen.json",
-      "timestamp": "2026-05-07",
-      "unitCount": 5
-    },
-    {
       "id": "Default",
       "name": "Default",
       "file": "scene.glb",
-      "timestamp": "2026-05-07",
+      "timestamp": "2026-05-04",
       "unitCount": 5
     }
   ]
