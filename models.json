@@ -15,9 +15,51 @@
       "unitCount": 8
     },
     {
-      "id": "Analise_V1",
-      "name": "Analise_V1",
-      "file": "Analise_V1.glb",
+      "id": "Dore_Buite_Kombuis",
+      "name": "Dore_Buite_Kombuis",
+      "file": "Dore_Buite_Kombuis.glb",
+      "timestamp": "2026-05-17",
+      "unitCount": 8
+    },
+    {
+      "id": "Analise_V2",
+      "name": "Analise_V2",
+      "file": "Analise_V2.glb",
+      "timestamp": "2026-05-17",
+      "unitCount": 28
+    },
+    {
+      "id": "Sarita_Gang",
+      "name": "Sarita_Gang",
+      "file": "Sarita_Gang.glb",
+      "timestamp": "2026-05-17",
+      "unitCount": 28
+    },
+    {
+      "id": "Sarita_Julia",
+      "name": "Sarita_Julia",
+      "file": "Sarita_Julia.glb",
+      "timestamp": "2026-05-17",
+      "unitCount": 28
+    },
+    {
+      "id": "Sarita_Ashley",
+      "name": "Sarita_Ashley",
+      "file": "Sarita_Ashley.glb",
+      "timestamp": "2026-05-17",
+      "unitCount": 28
+    },
+    {
+      "id": "Sarita_Avian",
+      "name": "Sarita_Avian",
+      "file": "Sarita_Avian.glb",
+      "timestamp": "2026-05-17",
+      "unitCount": 28
+    },
+    {
+      "id": "Sarita_Abigale",
+      "name": "Sarita_Abigale",
+      "file": "Sarita_Abigale.glb",
       "timestamp": "2026-05-17",
       "unitCount": 28
     },
