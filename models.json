@@ -71,6 +71,41 @@
       "unitCount": 28
     },
     {
+      "id": "Gabriel_Kombuis",
+      "name": "Gabriel_Kombuis",
+      "file": "Gabriel_Kombuis.glb",
+      "timestamp": "2026-05-17",
+      "unitCount": 28
+    },
+    {
+      "id": "Gabriel_Sauna",
+      "name": "Gabriel_Sauna",
+      "file": "Gabriel_Sauna.glb",
+      "timestamp": "2026-05-17",
+      "unitCount": 28
+    },
+    {
+      "id": "Gabriel_Bathroom_Small",
+      "name": "Gabriel_Bathroom_Small",
+      "file": "Gabriel_Bathroom_Small.glb",
+      "timestamp": "2026-05-17",
+      "unitCount": 28
+    },
+    {
+      "id": "Gabriel_Hallway",
+      "name": "Gabriel_Hallway",
+      "file": "Gabriel_Hallway.glb",
+      "timestamp": "2026-05-17",
+      "unitCount": 28
+    },
+    {
+      "id": "Gabriel_Scullery",
+      "name": "Gabriel_Scullery",
+      "file": "Gabriel_Scullery.glb",
+      "timestamp": "2026-05-17",
+      "unitCount": 28
+    },
+    {
       "id": "Default",
       "name": "Default",
       "file": "scene.glb",
