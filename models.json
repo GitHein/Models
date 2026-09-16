@@ -1,6 +1,13 @@
 {
   "models": [
     {
+      "id": "Mooikloof_Kombuis",
+      "name": "Mooikloof_Kombuis",
+      "file": "Mooikloof_Kombuis.glb",
+      "timestamp": "2026-09-16",
+      "unitCount": 29
+    },
+    {
       "id": "Dore_Kombuis",
       "name": "Dore_Kombuis",
       "file": "Kombuis.glb",
