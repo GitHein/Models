@@ -1,18 +1,11 @@
 {
   "models": [
     {
-      "id": "Oelofse1",
-      "name": "Oelofse1",
-      "file": "scenex.glb",
-      "timestamp": "2026-09-16",
-      "unitCount": 29
-    },
-    {
-      "id": "Oelofse2",
-      "name": "Oelofse2",
-      "file": "sceney.glb",
-      "timestamp": "2026-09-16",
-      "unitCount": 29
+      "id": "Oelofse",
+      "name": "Oelofse",
+      "file": "Oelofse.glb",
+      "timestamp": "2026-10-10",
+      "unitCount": 6
     },
     {
       "id": "Mooikloof_Kombuis",
