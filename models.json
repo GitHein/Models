@@ -1,6 +1,20 @@
 {
   "models": [
     {
+      "id": "Oelofse1",
+      "name": "Oelofse1",
+      "file": "scenex.glb",
+      "timestamp": "2026-09-16",
+      "unitCount": 29
+    },
+    {
+      "id": "Oelofse2",
+      "name": "Oelofse2",
+      "file": "sceney.glb",
+      "timestamp": "2026-09-16",
+      "unitCount": 29
+    },
+    {
       "id": "Mooikloof_Kombuis",
       "name": "Mooikloof_Kombuis",
       "file": "Mooikloof_Kombuis.glb",
