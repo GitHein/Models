@@ -65,6 +65,12 @@
         .model-list-scroll::-webkit-scrollbar-thumb:hover {
             background: rgba(255,255,255,0.5);
         }
+        .view-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+        .view-grid button { padding: 8px 4px; margin: 0; font-size: 13px; cursor: pointer; }
+        .view-grid kbd {
+            display: inline-block; margin-left: 4px; padding: 0 5px; font-size: 11px;
+            background: rgba(255,255,255,0.18); border-radius: 3px; font-family: monospace;
+        }
     </style>
 </head>
 <body>
@@ -100,6 +106,29 @@
 
             <label>Metalness <span id="metalVal">0.1</span></label>
             <input type="range" id="metalness" min="0" max="1" step="0.01" value="0.1">
+        </div>
+
+        <div class="section">
+            <h3 style="margin:0 0 8px 0;">Transparency</h3>
+            <label>Opacity <span id="opacityVal">100</span>%</label>
+            <input type="range" id="opacity" min="0.05" max="1" step="0.05" value="1">
+            <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                <input type="checkbox" id="opacitySelectedOnly" style="width:auto; margin:0;">
+                Selected object only
+            </label>
+        </div>
+
+        <div class="section">
+            <h3 style="margin:0 0 8px 0;">Views</h3>
+            <div class="view-grid">
+                <button data-view="left"  title="Left (L)">Left<kbd>L</kbd></button>
+                <button data-view="right" title="Right (R)">Right<kbd>R</kbd></button>
+                <button data-view="front" title="Front (F)">Front<kbd>F</kbd></button>
+                <button data-view="back"  title="Back (B)">Back<kbd>B</kbd></button>
+                <button data-view="top"   title="Top (T)">Top<kbd>T</kbd></button>
+                <button data-view="iso"   title="Isometric (I)">Iso<kbd>I</kbd></button>
+                <button data-view="fit"   title="Zoom to fit (Z)" style="grid-column: span 3;">Zoom Fit<kbd>Z</kbd></button>
+            </div>
         </div>
 
         <div class="section">
@@ -146,6 +175,8 @@
         let uiVisible = true;
 
         let hoverLabel = null;
+        let modelRoot = null;   // loaded GLB scene (used for opacity + view fitting)
+        let camTween = null;
 
         // --- UNIT ROOT FINDER ---
         function findUnitRoot(obj) {
@@ -232,6 +263,7 @@
                 
                 if (obj && obj.material) {
                     selectedMesh = obj;
+                    syncOpacitySlider();
                     
                     if (selectedMesh.material.roughness !== undefined) {
                         document.getElementById('roughness').value = selectedMesh.material.roughness;
@@ -393,6 +425,7 @@
                     // Ensure our new cabinet material can react to any environmental lighting maps if present
                     newMat.envMapIntensity = 1.0;
 
+                    setMaterialOpacity(newMat, getOpacityFactor(selectedMesh.material));
                     if (selectedMesh.material) selectedMesh.material.dispose();
                     selectedMesh.material = newMat;
                 });
@@ -442,6 +475,7 @@
 
             new THREE.GLTFLoader().load(modelToLoad, (gltf) => {
                 const model = gltf.scene;
+                modelRoot = model;
                 scene.add(model);
 
                 // Add dimension labels
@@ -477,7 +511,8 @@
                 // Optional fallback
                 if (currentModel !== 'scene.glb') {
                     new THREE.GLTFLoader().load('scene.glb', (gltf) => {
-                        scene.add(gltf.scene);
+                        modelRoot = gltf.scene;
+                        scene.add(modelRoot);
                     }, undefined, (e) => console.error(e));
                 }
             });
@@ -509,6 +544,170 @@
             document.getElementById('resetColors').addEventListener('click', resetColors);
             document.getElementById('resetMaterial').addEventListener('click', resetMaterial);
             document.getElementById('resetAll').addEventListener('click', resetAllLighting);
+
+            // Opacity
+            document.getElementById('opacity').addEventListener('input', updateOpacity);
+            document.getElementById('opacitySelectedOnly').addEventListener('change', syncOpacitySlider);
+
+            // View buttons
+            document.querySelectorAll('[data-view]').forEach(b => {
+                b.addEventListener('click', () => { setView(b.dataset.view); b.blur(); });
+            });
+
+            // Keyboard shortcuts: L R F B T I Z
+            window.addEventListener('keydown', onKeyDown);
+
+            // User grabbing the camera cancels any running view animation
+            controls.addEventListener('start', () => { camTween = null; });
+        }
+
+        // ---------------- OPACITY / TRANSPARENCY ----------------
+        function getMats(obj) {
+            if (!obj || !obj.material) return [];
+            return Array.isArray(obj.material) ? obj.material : [obj.material];
+        }
+
+        function getOpacityFactor(mat) {
+            const m = Array.isArray(mat) ? mat[0] : mat;
+            return (m && m.userData && m.userData.opacityFactor !== undefined) ? m.userData.opacityFactor : 1;
+        }
+
+        // factor is multiplied with the material's original opacity (keeps glass etc. correct)
+        function setMaterialOpacity(mat, factor) {
+            if (!mat) return;
+            if (mat.userData.baseOpacity === undefined) {
+                mat.userData.baseOpacity = mat.opacity;
+                mat.userData.baseTransparent = mat.transparent;
+            }
+            mat.userData.opacityFactor = factor;
+            mat.opacity = mat.userData.baseOpacity * factor;
+            mat.transparent = mat.userData.baseTransparent || factor < 1;
+            mat.depthWrite = !mat.transparent;   // avoids see-through sorting artefacts
+            mat.needsUpdate = true;
+        }
+
+        function updateOpacity() {
+            const factor = parseFloat(document.getElementById('opacity').value);
+            document.getElementById('opacityVal').textContent = Math.round(factor * 100);
+
+            if (document.getElementById('opacitySelectedOnly').checked) {
+                if (selectedMesh) getMats(selectedMesh).forEach(m => setMaterialOpacity(m, factor));
+            } else if (modelRoot) {
+                modelRoot.traverse(o => getMats(o).forEach(m => setMaterialOpacity(m, factor)));
+            }
+        }
+
+        function syncOpacitySlider() {
+            if (!document.getElementById('opacitySelectedOnly').checked || !selectedMesh) return;
+            const f = getOpacityFactor(selectedMesh.material);
+            document.getElementById('opacity').value = f;
+            document.getElementById('opacityVal').textContent = Math.round(f * 100);
+        }
+
+        function resetOpacity() {
+            document.getElementById('opacity').value = 1;
+            document.getElementById('opacityVal').textContent = 100;
+            if (modelRoot) modelRoot.traverse(o => getMats(o).forEach(m => setMaterialOpacity(m, 1)));
+        }
+
+        // ---------------- CAMERA VIEWS ----------------
+        // glTF is Y-up: Blender -Y (front) becomes +Z, Blender +X stays +X
+        const VIEW_DIRS = {
+            front: [0, 0, 1],
+            back:  [0, 0, -1],
+            left:  [-1, 0, 0],
+            right: [1, 0, 0],
+            top:   [0, 1, 0.0001],   // tiny offset avoids gimbal lock at the pole
+            iso:   [1, 1, 1]
+        };
+
+        function setView(name) {
+            if (name === 'fit') {
+                // keep current viewing direction, just frame everything
+                const dir = camera.position.clone().sub(controls.target);
+                if (dir.lengthSq() < 1e-8) dir.set(1, 1, 1);
+                fitCamera(dir);
+            } else if (VIEW_DIRS[name]) {
+                fitCamera(new THREE.Vector3(...VIEW_DIRS[name]));
+            }
+        }
+
+        // Frame the whole model, looking at its centre from direction `dir`
+        function fitCamera(dir) {
+            if (!modelRoot) return;
+            const box = new THREE.Box3().setFromObject(modelRoot);
+            if (box.isEmpty()) return;
+
+            const center = box.getCenter(new THREE.Vector3());
+            dir = dir.clone().normalize();
+
+            // camera basis for this direction
+            const fwd = dir.clone().negate();
+            const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
+            const up = new THREE.Vector3().crossVectors(right, fwd).normalize();
+
+            const tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+            const tanH = tanV * camera.aspect;
+
+            // minimum distance so every bounding-box corner is inside the frustum
+            let dist = 0.1;
+            for (let i = 0; i < 8; i++) {
+                const corner = new THREE.Vector3(
+                    i & 1 ? box.max.x : box.min.x,
+                    i & 2 ? box.max.y : box.min.y,
+                    i & 4 ? box.max.z : box.min.z
+                ).sub(center);
+                const depth = corner.dot(dir);
+                dist = Math.max(dist,
+                    depth + Math.abs(corner.dot(right)) / tanH,
+                    depth + Math.abs(corner.dot(up)) / tanV);
+            }
+            dist *= 1.08;   // small margin
+
+            flyTo(center.clone().add(dir.multiplyScalar(dist)), center);
+        }
+
+        // Smooth camera move (rotates around the target instead of cutting through the model)
+        function flyTo(toPos, toTarget, ms = 450) {
+            const fromTarget = controls.target.clone();
+            const fromOff = camera.position.clone().sub(fromTarget);
+            const toOff = toPos.clone().sub(toTarget);
+            const fromDir = fromOff.clone().normalize();
+            const toDir = toOff.clone().normalize();
+            camTween = {
+                t0: performance.now(), ms,
+                fromTarget, toTarget: toTarget.clone(),
+                fromDir, q: new THREE.Quaternion().setFromUnitVectors(fromDir, toDir),
+                fromLen: fromOff.length(), toLen: toOff.length()
+            };
+        }
+
+        function updateCameraTween() {
+            if (!camTween) return;
+            const k = Math.min((performance.now() - camTween.t0) / camTween.ms, 1);
+            const e = k * k * (3 - 2 * k);   // smoothstep
+
+            controls.target.lerpVectors(camTween.fromTarget, camTween.toTarget, e);
+            const dir = camTween.fromDir.clone().applyQuaternion(new THREE.Quaternion().slerp(camTween.q, e));
+            const len = camTween.fromLen + (camTween.toLen - camTween.fromLen) * e;
+            camera.position.copy(controls.target).add(dir.multiplyScalar(len));
+
+            if (k >= 1) camTween = null;
+        }
+
+        // ---------------- KEYBOARD ----------------
+        function onKeyDown(e) {
+            if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;   // leave Ctrl+R, Ctrl+F etc. alone
+            const t = e.target, tag = t && t.tagName;
+            if (tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
+            if (tag === 'INPUT' && !['range', 'checkbox', 'color'].includes(t.type)) return;
+
+            const keyMap = { l: 'left', r: 'right', f: 'front', b: 'back', t: 'top', i: 'iso', z: 'fit' };
+            const view = keyMap[e.key.toLowerCase()];
+            if (view) {
+                e.preventDefault();
+                setView(view);
+            }
         }
 
         function updateLighting() {
@@ -557,6 +756,7 @@
                     obj.material.metalness = 0.1;
                 }
             });
+            resetOpacity();
         }
 
         function resetColors() {
@@ -591,6 +791,7 @@
 
         function animate() {
             requestAnimationFrame(animate);
+            updateCameraTween();
             controls.update();
             renderer.render(scene, camera);
             labelRenderer.render(scene, camera);
