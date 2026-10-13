@@ -111,7 +111,7 @@
         <div class="section">
             <h3 style="margin:0 0 8px 0;">Transparency</h3>
             <label>Opacity <span id="opacityVal">100</span>%</label>
-            <input type="range" id="opacity" min="0.05" max="1" step="0.05" value="1">
+            <input type="range" id="opacity" min="0.05" max="1" step="0.01" value="1">
             <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
                 <input type="checkbox" id="opacitySelectedOnly" style="width:auto; margin:0;">
                 Selected object only
@@ -562,6 +562,7 @@
         }
 
         // ---------------- OPACITY / TRANSPARENCY ----------------
+        // ---------------- OPACITY / TRANSPARENCY ----------------
         function getMats(obj) {
             if (!obj || !obj.material) return [];
             return Array.isArray(obj.material) ? obj.material : [obj.material];
@@ -569,52 +570,75 @@
 
         function getOpacityFactor(mat) {
             const m = Array.isArray(mat) ? mat[0] : mat;
-            return (m && m.userData && m.userData.opacityFactor !== undefined) ? m.userData.opacityFactor : 1;
+            return (m && m.userData && m.userData.opacityFactor !== undefined)
+                ? m.userData.opacityFactor
+                : 1;
         }
 
-        // factor is multiplied with the material's original opacity (keeps glass etc. correct)
-        function setMaterialOpacity(mat, factor) {
+        function setMaterialOpacity(mat, factor, forceClone = false) {
             if (!mat) return;
-            if (mat.userData.baseOpacity === undefined) {
-                mat.userData.baseOpacity = mat.opacity;
-                mat.userData.baseTransparent = mat.transparent;
+
+            // Clone if we are operating on a single selected object
+            // (avoids mutating shared materials that belong to other cabinets)
+            if (forceClone && !mat.userData._opacityCloned) {
+                mat = mat.clone();
+                mat.userData._opacityCloned = true;
+                // caller must re-assign the cloned material – see updateOpacity
+                return mat;
             }
+
+            if (mat.userData.baseOpacity === undefined) {
+                mat.userData.baseOpacity = mat.opacity ?? 1;
+                mat.userData.baseTransparent = mat.transparent ?? false;
+            }
+
             mat.userData.opacityFactor = factor;
             mat.opacity = mat.userData.baseOpacity * factor;
-            mat.transparent = mat.userData.baseTransparent || factor < 1;
-            mat.depthWrite = !mat.transparent;   // avoids see-through sorting artefacts
+
+            // Keep depthWrite ON – this eliminates most of the sudden “vanish” artefacts
+            // on dense cabinet geometry.  transparent is still required for opacity < 1.
+            mat.transparent = factor < 0.999;
+            mat.depthWrite  = true;               // ← critical change
             mat.needsUpdate = true;
+
+            return mat;
         }
 
         function updateOpacity() {
             const factor = parseFloat(document.getElementById('opacity').value);
             document.getElementById('opacityVal').textContent = Math.round(factor * 100);
 
-            if (document.getElementById('opacitySelectedOnly').checked) {
-                if (selectedMesh) getMats(selectedMesh).forEach(m => setMaterialOpacity(m, factor));
+            const selectedOnly = document.getElementById('opacitySelectedOnly').checked;
+
+            if (selectedOnly) {
+                if (!selectedMesh) return;
+                const mats = getMats(selectedMesh);
+                const newMats = mats.map(m => {
+                    const result = setMaterialOpacity(m, factor, true);
+                    // if a clone was returned, re-assign it
+                    return result || m;
+                });
+                selectedMesh.material = newMats.length === 1 ? newMats[0] : newMats;
             } else if (modelRoot) {
-                modelRoot.traverse(o => getMats(o).forEach(m => setMaterialOpacity(m, factor)));
+                modelRoot.traverse(o => {
+                    getMats(o).forEach(m => setMaterialOpacity(m, factor, false));
+                });
             }
         }
 
         function syncOpacitySlider() {
             if (!document.getElementById('opacitySelectedOnly').checked || !selectedMesh) return;
             const f = getOpacityFactor(selectedMesh.material);
-
-            //document.getElementById('opacity').value = f;
-            //document.getElementById('opacityVal').textContent = Math.round(f * 100);
-            
-            // Force the slider value to match the 0.05 - 1 float space
-            const sliderValue = f > 1 ? f / 100 : f; 
-            
-            document.getElementById('opacity').value = sliderValue;
-            document.getElementById('opacityVal').textContent = Math.round(sliderValue * 100);
+            document.getElementById('opacity').value = f;
+            document.getElementById('opacityVal').textContent = Math.round(f * 100);
         }
 
         function resetOpacity() {
             document.getElementById('opacity').value = 1;
             document.getElementById('opacityVal').textContent = 100;
-            if (modelRoot) modelRoot.traverse(o => getMats(o).forEach(m => setMaterialOpacity(m, 1)));
+            if (modelRoot) {
+                modelRoot.traverse(o => getMats(o).forEach(m => setMaterialOpacity(m, 1, false)));
+            }
         }
 
         // ---------------- CAMERA VIEWS ----------------
