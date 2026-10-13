@@ -600,8 +600,15 @@
         function syncOpacitySlider() {
             if (!document.getElementById('opacitySelectedOnly').checked || !selectedMesh) return;
             const f = getOpacityFactor(selectedMesh.material);
-            document.getElementById('opacity').value = f;
-            document.getElementById('opacityVal').textContent = Math.round(f * 100);
+
+            //document.getElementById('opacity').value = f;
+            //document.getElementById('opacityVal').textContent = Math.round(f * 100);
+            
+            // Force the slider value to match the 0.05 - 1 float space
+            const sliderValue = f > 1 ? f / 100 : f; 
+            
+            document.getElementById('opacity').value = sliderValue;
+            document.getElementById('opacityVal').textContent = Math.round(sliderValue * 100);
         }
 
         function resetOpacity() {
