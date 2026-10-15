@@ -422,6 +422,7 @@
                         metalness: currentMetalness,
                         transparent: true, // 1510 Allow transparency rendering calculations
                         depthWrite: true   // 1510 Maintain structure depth layout
+                        side: THREE.DoubleSide //1510 ◄ Ensure internal panels render backfaces completely
                     });
 
                     // Ensure our new cabinet material can react to any environmental lighting maps if present
@@ -490,6 +491,16 @@
                         if (child.material.color.getHex() === 0xffffff) {
                             child.material.color.setHex(0xf5f5f5); // Soft off-white shows details better than pure blinding white
                         }
+
+                        //1510_00
+                        // === ACTIVATE TRANSPARENCY HOOKS IMMEDIATELY ===
+                        // This allows initial sliders to react without applying a custom texture first
+                        child.material.transparent = false; 
+                        child.material.depthWrite = true;
+                        // Render both sides of the wood panels so backing walls don't vanish from wide viewing angles
+                        child.material.side = THREE.DoubleSide;
+                        //1510_00
+
                         if (child.userData && child.userData.unit_label && !child.userData.is_unit) {
                             // Remove old empty-based labels
                             child.remove(...child.children.filter(c => c instanceof THREE.CSS2DObject));
@@ -631,7 +642,7 @@
         }
 
 
-        function updateOpacity() {
+        function updateOpacity_1510_11() {
             const factor = parseFloat(document.getElementById('opacity').value);
             document.getElementById('opacityVal').textContent = Math.round(factor * 100);
 
@@ -652,6 +663,36 @@
                 });
             }
         }
+
+        function updateOpacity() {
+            const factor = parseFloat(document.getElementById('opacity').value);
+            document.getElementById('opacityVal').textContent = Math.round(factor * 100);
+
+            const selectedOnly = document.getElementById('opacitySelectedOnly').checked;
+
+            if (selectedOnly) {
+                if (!selectedMesh) return;
+                const mats = getMats(selectedMesh);
+                const newMats = mats.map(m => {
+                    const result = setMaterialOpacity(m, factor, true);
+                    return result || m;
+                });
+                selectedMesh.material = newMats.length === 1 ? newMats[0] : newMats;
+            } else if (modelRoot) {
+                modelRoot.traverse(o => {
+                    if (o.isMesh && o.material) {
+                        const mats = getMats(o);
+                        const newMats = mats.map(m => {
+                            // Force unique cloning globally so objects don't clip out each other's interior spaces
+                            const result = setMaterialOpacity(m, factor, true); 
+                            return result || m;
+                        });
+                        o.material = newMats.length === 1 ? newMats[0] : newMats;
+                    }
+                });
+            }
+        }
+
 
         function syncOpacitySlider() {
             if (!document.getElementById('opacitySelectedOnly').checked || !selectedMesh) return;
