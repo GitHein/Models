@@ -78,7 +78,7 @@
 
     <div id="ui">
         <h2 style="margin:0 0 8px 0;">🎨 IdealKitchens <br>
-        Hein 📡 079 999 2215_1510_03</h2>
+        Hein 📡 079 999 2215_1510_04</h2>
         <small id="modelName" style="color:#aaa;">Loading model list...</small>
         
         <div class="section">
@@ -677,7 +677,7 @@
                     const result = setMaterialOpacity(m, factor, true);
                     return result || m;
                 });
-                selectedMesh.material = newMats.length === 1 ? newMats[0] : newMats;
+                selectedMesh.material = newMats.length === 1 ? newMats[0] : newMats[0];
             } else if (modelRoot) {
                 modelRoot.traverse(o => {
                     if (o.isMesh && o.material) {
