@@ -78,7 +78,7 @@
 
     <div id="ui">
         <h2 style="margin:0 0 8px 0;">🎨 IdealKitchens <br>
-        Hein 📡 079 999 2215_1510_11</h2>
+        Hein 📡 079 999 2215_1510_12</h2>
         <small id="modelName" style="color:#aaa;">Loading model list...</small>
         
         <div class="section">
@@ -125,7 +125,11 @@
                 <input type="checkbox" id="enableMotion" style="width:auto; margin:0;">
                 Enable Motion
             </label>
-
+            <!-- ── Add the Open / Close Global Actions Button Grid ── -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px;">
+                <button id="btnOpenAll" style="margin:0; padding:8px; background:#28a745; color:#fff; border:none; cursor:pointer; font-weight:bold;">Open All</button>
+                <button id="btnCloseAll" style="margin:0; padding:8px; background:#dc3545; color:#fff; border:none; cursor:pointer; font-weight:bold;">Close All</button>
+            </div>
         </div>
 
         <div class="section">
@@ -761,6 +765,10 @@
                 motionEnabled = e.target.checked;
             });
 
+            // 1510_12 ── Register the Global Cinematic Action Actions ──
+            document.getElementById('btnOpenAll').addEventListener('click', () => triggerGlobalMotion(true));
+            document.getElementById('btnCloseAll').addEventListener('click', () => triggerGlobalMotion(false));
+
             // View buttons
             document.querySelectorAll('[data-view]').forEach(b => {
                 b.addEventListener('click', () => { setView(b.dataset.view); b.blur(); });
@@ -1073,6 +1081,35 @@
             }
         }
 
+        function triggerGlobalMotion(openEverything) {
+            if (!modelRoot) return;
+
+            // Automatically switch on motion execution calculations state flags
+            document.getElementById('enableMotion').checked = true;
+            motionEnabled = true;
+
+            modelRoot.traverse(o => {
+                if (o.isMesh && o.userData && o.userData.panel_type) {
+                    if (o.userData.panel_type === "Door") {
+                        const hinge = getOrCreateHinge(o);
+                        if (hinge.isOpen !== openEverything) {
+                            hinge.isOpen = openEverything;
+                            hinge.targetAngle = openEverything ? -Math.PI * 0.65 : 0;
+                            if (!doorAnimations.includes(hinge)) doorAnimations.push(hinge);
+                        }
+                    } else if (o.userData.panel_type === "Drawer") {
+                        const drawer = getOrCreateDrawer(o);
+                        if (drawer.isOpen !== openEverything) {
+                            drawer.isOpen = openEverything;
+                            drawer.targetZ = openEverything ? (drawer.initialZ + drawer.targetOffset) : drawer.initialZ;
+                            if (!doorAnimations.includes(drawer)) doorAnimations.push(drawer);
+                        }
+                    }
+                }
+            });
+        }
+
+
         function updateDoorAnimations() {
             for (let i = doorAnimations.length - 1; i >= 0; i--) {
                 const item = doorAnimations[i];
@@ -1271,7 +1308,7 @@
             resetOpacity();
         }
 
-        function resetMaterial() {
+        function resetMaterial1510_12() {
             // Snap hinge components closed
             hinges.forEach(h => {
                 h.isOpen = false;
@@ -1289,6 +1326,42 @@
             });
             
             doorAnimations = []; // Clear current engine calculations queue
+
+            scene.traverse((obj) => {
+                if (obj.material) {
+                    obj.material.color.set(0xeeeeee);
+                    obj.material.map = null;
+                    obj.material.normalMap = null;
+                    obj.material.roughness = 0.7;
+                    obj.material.metalness = 0.1;
+                }
+                if (obj.isMesh) obj.visible = true;
+            });
+            
+            document.getElementById('toggleDoorsVisible').checked = true;
+            document.getElementById('enableMotion').checked = false;
+            motionEnabled = false;
+            resetOpacity();
+        }
+
+        function resetMaterial() {
+            // Snap hinge components closed
+            hinges.forEach(h => {
+                h.isOpen = false;
+                h.currentAngle = 0;
+                h.targetAngle = 0;
+                h.group.rotation.y = 0;
+            });
+            
+            // Snap drawer tracks shut
+            drawers.forEach(d => {
+                d.isOpen = false;
+                d.currentZ = d.initialZ;
+                d.targetZ = d.initialZ;
+                d.mesh.position.z = d.initialZ;
+            });
+            
+            doorAnimations = []; 
 
             scene.traverse((obj) => {
                 if (obj.material) {
