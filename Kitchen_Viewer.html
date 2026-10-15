@@ -78,7 +78,7 @@
 
     <div id="ui">
         <h2 style="margin:0 0 8px 0;">🎨 IdealKitchens <br>
-        Hein 📡 079 999 2215_1510_04</h2>
+        Hein 📡 079 999 2215_1510_05</h2>
         <small id="modelName" style="color:#aaa;">Loading model list...</small>
         
         <div class="section">
@@ -386,7 +386,7 @@
             });
         }
 
-        function applyPBRMaterial(diffuseUrl, normalUrl) {
+        function applyPBRMaterial_1510_05(diffuseUrl, normalUrl) {
             if (!selectedMesh || !selectedMesh.material) {
                 alert("Please select an object first!");
                 return;
@@ -434,6 +434,61 @@
                 });
             });
         }
+
+        function applyPBRMaterial(diffuseUrl, normalUrl) {
+            if (!selectedMesh || !selectedMesh.material) {
+                alert("Please select an object first!");
+                return;
+            }
+
+            const currentRoughness = parseFloat(document.getElementById('roughness').value);
+            const currentMetalness = parseFloat(document.getElementById('metalness').value);
+            const factor = parseFloat(document.getElementById('opacity').value);
+            const isFaceType = (selectedMesh.userData.panel_type === "Door" || selectedMesh.userData.panel_type === "Drawer");
+
+            const loader = new THREE.TextureLoader();
+
+            loader.load(diffuseUrl, (diffuseTex) => {
+                diffuseTex.wrapS = diffuseTex.wrapT = THREE.RepeatWrapping;
+                diffuseTex.repeat.set(2, 2);
+
+                loader.load(normalUrl, (normalTex) => {
+                    normalTex.wrapS = normalTex.wrapT = THREE.RepeatWrapping;
+                    normalTex.repeat.set(2, 2);
+
+                    const createMaterialInstance = () => {
+                        const m = new THREE.MeshStandardMaterial({
+                            map: diffuseTex,
+                            normalMap: normalTex,
+                            normalScale: new THREE.Vector2(0.15, 0.15), 
+                            roughness: currentRoughness,
+                            metalness: currentMetalness,
+                            transparent: factor < 0.999,
+                            depthWrite: true,
+                            side: THREE.DoubleSide
+                        });
+                        m.envMapIntensity = 1.0;
+                        m.userData._opacityCloned = true;
+                        return setMaterialOpacity(m, factor, false);
+                    };
+
+                    if (isFaceType && modelRoot) {
+                        // Apply texture to all front faces synchronously
+                        modelRoot.traverse(o => {
+                            if (o.isMesh && (o.userData.panel_type === "Door" || o.userData.panel_type === "Drawer")) {
+                                if (o.material) o.material.dispose();
+                                o.material = createMaterialInstance();
+                            }
+                        });
+                    } else {
+                        // Apply texture to the single targeted structural carcass panel asset
+                        if (selectedMesh.material) selectedMesh.material.dispose();
+                        selectedMesh.material = createMaterialInstance();
+                    }
+                });
+            });
+        }
+
 
 
         function init() {
@@ -617,7 +672,7 @@
             return mat;
         }
 
-        function setMaterialOpacity(mat, factor, forceClone = false) {
+        function setMaterialOpacity_1510_05(mat, factor, forceClone = false) {
             if (!mat) return;
 
             // Clone if we are operating on a single selected object
@@ -640,6 +695,33 @@
 
             return mat; // Always return the material instance back
         }
+
+        function setMaterialOpacity(mat, factor, forceClone = false) {
+            if (!mat) return null;
+
+            let targetMat = mat;
+            if (forceClone && !targetMat.userData._opacityCloned) {
+                targetMat = mat.clone();
+                targetMat.userData._opacityCloned = true;
+            }
+
+            if (targetMat.userData.baseOpacity === undefined) {
+                targetMat.userData.baseOpacity = targetMat.opacity ?? 1;
+                targetMat.userData.baseTransparent = targetMat.transparent ?? false;
+            }
+
+            targetMat.userData.opacityFactor = factor;
+            targetMat.opacity = targetMat.userData.baseOpacity * factor;
+            
+            // Set rendering states explicitly to handle internal depth sort layers safely
+            targetMat.transparent = factor < 0.999;
+            targetMat.depthWrite = true; 
+            targetMat.side = THREE.DoubleSide; 
+            targetMat.needsUpdate = true;
+
+            return targetMat;
+        }
+
 
 
         function updateOpacity_1510_11() {
@@ -664,7 +746,7 @@
             }
         }
 
-        function updateOpacity() {
+        function updateOpacity_1510_05() {
             const factor = parseFloat(document.getElementById('opacity').value);
             document.getElementById('opacityVal').textContent = Math.round(factor * 100);
 
@@ -692,6 +774,45 @@
                 });
             }
         }
+
+        function updateOpacity() {
+            const factor = parseFloat(document.getElementById('opacity').value);
+            document.getElementById('opacityVal').textContent = Math.round(factor * 100);
+
+            const selectedOnly = document.getElementById('opacitySelectedOnly').checked;
+
+            if (selectedOnly) {
+                if (!selectedMesh) return;
+                
+                const isFaceType = (selectedMesh.userData.panel_type === "Door" || selectedMesh.userData.panel_type === "Drawer");
+
+                if (isFaceType && modelRoot) {
+                    // LINKED FACES BEHAVIOUR: Process all dynamic front panels inside the scene together
+                    modelRoot.traverse(o => {
+                        if (o.isMesh && o.material && (o.userData.panel_type === "Door" || o.userData.panel_type === "Drawer")) {
+                            const mats = getMats(o);
+                            const newMats = mats.map(m => setMaterialOpacity(m, factor, true));
+                            o.material = newMats.length === 1 ? newMats[0] : newMats;
+                        }
+                    });
+                } else {
+                    // CARCASS BEHAVIOUR: Isolate updates to the singular cabinet slab part targeted
+                    const mats = getMats(selectedMesh);
+                    const newMats = mats.map(m => setMaterialOpacity(m, factor, true));
+                    selectedMesh.material = newMats.length === 1 ? newMats[0] : newMats;
+                }
+            } else if (modelRoot) {
+                // GLOBAL OPACITY: Safe traversal pass across the complete scene tree structure
+                modelRoot.traverse(o => {
+                    if (o.isMesh && o.material) {
+                        const mats = getMats(o);
+                        const newMats = mats.map(m => setMaterialOpacity(m, factor, true));
+                        o.material = newMats.length === 1 ? newMats[0] : newMats;
+                    }
+                });
+            }
+        }
+
 
 
         function syncOpacitySlider() {
