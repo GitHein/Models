@@ -419,7 +419,9 @@
                         // Tone down the bump intensity so the cabinet wood doesn't look rough and splintery
                         normalScale: new THREE.Vector2(0.15, 0.15), 
                         roughness: currentRoughness,
-                        metalness: currentMetalness
+                        metalness: currentMetalness,
+                        transparent: true, // 1510 Allow transparency rendering calculations
+                        depthWrite: true   // 1510 Maintain structure depth layout
                     });
 
                     // Ensure our new cabinet material can react to any environmental lighting maps if present
@@ -575,7 +577,7 @@
                 : 1;
         }
 
-        function setMaterialOpacity(mat, factor, forceClone = false) {
+        function setMaterialOpacity_old(mat, factor, forceClone = false) {
             if (!mat) return;
 
             // Clone if we are operating on a single selected object
@@ -603,6 +605,31 @@
 
             return mat;
         }
+
+        function setMaterialOpacity(mat, factor, forceClone = false) {
+            if (!mat) return;
+
+            // Clone if we are operating on a single selected object
+            if (forceClone && !mat.userData._opacityCloned) {
+                mat = mat.clone();
+                mat.userData._opacityCloned = true;
+            }
+
+            if (mat.userData.baseOpacity === undefined) {
+                mat.userData.baseOpacity = mat.opacity ?? 1;
+                mat.userData.baseTransparent = mat.transparent ?? false;
+            }
+
+            mat.userData.opacityFactor = factor;
+            mat.opacity = mat.userData.baseOpacity * factor;
+
+            mat.transparent = factor < 0.999;
+            mat.depthWrite  = true;               // ← critical change
+            mat.needsUpdate = true;
+
+            return mat; // Always return the material instance back
+        }
+
 
         function updateOpacity() {
             const factor = parseFloat(document.getElementById('opacity').value);
