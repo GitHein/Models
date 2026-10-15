@@ -78,7 +78,7 @@
 
     <div id="ui">
         <h2 style="margin:0 0 8px 0;">🎨 IdealKitchens <br>
-        Hein 📡 079 999 2215_1510_05</h2>
+        Hein 📡 079 999 2215_1510_08</h2>
         <small id="modelName" style="color:#aaa;">Loading model list...</small>
         
         <div class="section">
@@ -178,6 +178,9 @@
         let scene, camera, renderer, controls, selectedMesh, hemiLight, dirLight, labelRenderer;
         let currentModel = new URLSearchParams(window.location.search).get('model') || 'scene.glb';
         let uiVisible = true;
+        let hinges = new Map(); // 1510_08 Tracks virtual hinges assigned to unique door mesh components
+        let doorAnimations = []; // 1510_08 Collection of active swinging interpolation frames
+
 
         let hoverLabel = null;
         let modelRoot = null;   // loaded GLB scene (used for opacity + view fitting)
@@ -252,7 +255,7 @@
         }
 
         // --- SELECTION LOGIC ---
-        function onClick(event) {
+        function onClick1510_08(event) {
             const mouse = getMouseVector2(event);
             const raycaster = new THREE.Raycaster();
             
@@ -281,6 +284,43 @@
                 }
             }
         }
+
+        function onClick(event) {
+            const mouse = getMouseVector2(event);
+            const raycaster = new THREE.Raycaster();
+            
+            raycaster.setFromCamera(mouse, camera);
+            const hits = raycaster.intersectObjects(scene.children, true);
+            
+            if (hits.length > 0) {
+                let obj = hits[0].object;
+                
+                // If it is a door panel asset, pass it straight to the hinge engine loop
+                if (obj.isMesh && obj.userData && obj.userData.panel_type === "Door") {
+                    toggleDoorHingeAction(obj);
+                    return; // Bypass standard color selection assignments
+                }
+                
+                while (obj && !obj.material) {
+                    obj = obj.parent;
+                }
+                
+                if (obj && obj.material) {
+                    selectedMesh = obj;
+                    syncOpacitySlider();
+                    
+                    if (selectedMesh.material.roughness !== undefined) {
+                        document.getElementById('roughness').value = selectedMesh.material.roughness;
+                        document.getElementById('roughVal').textContent = selectedMesh.material.roughness.toFixed(2);
+                    }
+                    if (selectedMesh.material.metalness !== undefined) {
+                        document.getElementById('metalness').value = selectedMesh.material.metalness;
+                        document.getElementById('metalVal').textContent = selectedMesh.material.metalness.toFixed(2);
+                    }
+                }
+            }
+        }
+
 
         let currentTextureMap = {};
 
@@ -839,6 +879,74 @@
             });
         }
 
+                function getOrCreateHinge(mesh) {
+            if (hinges.has(mesh)) return hinges.get(mesh);
+
+            // 1. Calculate local geometry extents to find the hinge edge line
+            mesh.geometry.computeBoundingBox();
+            const bbox = mesh.geometry.boundingBox;
+            const sizeX = bbox.max.x - bbox.min.x;
+            
+            // 2. Generate the temporary parent element to serve as the hinge
+            const hingeGroup = new THREE.Group();
+            
+            // Determine left vs right hinge placement based on relative parent collection positioning
+            // Default setup assigns the pivot to the local negative X edge boundary point
+            const pivotOffset = bbox.min.x; 
+
+            hingeGroup.position.copy(mesh.position);
+            hingeGroup.position.x += pivotOffset; 
+            
+            // Move original mesh coordinates down relative to the pivot space structure
+            mesh.position.set(-pivotOffset, 0, 0);
+
+            // 3. Re-link parent structures safely within the operational scene architecture
+            const originalParent = mesh.parent;
+            originalParent.add(hingeGroup);
+            hingeGroup.add(mesh);
+
+            const hingeData = {
+                group: hingeGroup,
+                mesh: mesh,
+                isOpen: false,
+                currentAngle: 0,
+                targetAngle: 0
+            };
+
+            hinges.set(mesh, hingeData);
+            return hingeData;
+        }
+
+        function toggleDoorHingeAction(mesh) {
+            const hinge = getOrCreateHinge(mesh);
+            
+            // Toggle state target boundaries (approx 115-degree realistic cabinet clearance arc)
+            hinge.isOpen = !hinge.isOpen;
+            hinge.targetAngle = hinge.isOpen ? -Math.PI * 0.65 : 0; 
+
+            // Register within runtime frame ticks loop if it isn't active
+            if (!doorAnimations.includes(hinge)) {
+                doorAnimations.push(hinge);
+            }
+        }
+
+        function updateDoorAnimations() {
+            // Process angular positions using standard frame damping functions
+            for (let i = doorAnimations.length - 1; i >= 0; i--) {
+                const hinge = doorAnimations[i];
+                const delta = hinge.targetAngle - hinge.currentAngle;
+
+                if (Math.abs(delta) < 0.001) {
+                    hinge.currentAngle = hinge.targetAngle;
+                    hinge.group.rotation.y = hinge.currentAngle;
+                    doorAnimations.splice(i, 1); // Cleanly drop finished calculations
+                } else {
+                    // Frame calculation speed modifier (Damping coefficient set to 0.15)
+                    hinge.currentAngle += delta * 0.15;
+                    hinge.group.rotation.y = hinge.currentAngle;
+                }
+            }
+        }
 
 
         function syncOpacitySlider() {
@@ -1038,13 +1146,25 @@
             labelRenderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        function animate() {
+        function animate1510_08() {
             requestAnimationFrame(animate);
             updateCameraTween();
             controls.update();
             renderer.render(scene, camera);
             labelRenderer.render(scene, camera);
         }
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Execute hinge swing calculations before pushing updates out to the canvas layout
+            updateDoorAnimations(); 
+            
+            updateCameraTween();
+            controls.update();
+            renderer.render(scene, camera);
+            labelRenderer.render(scene, camera);
+        }
+
 
         init();
     </script>
