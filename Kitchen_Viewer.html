@@ -116,6 +116,11 @@
                 <input type="checkbox" id="opacitySelectedOnly" style="width:auto; margin:0;">
                 Selected object only
             </label>
+            <!-- 15 10 06 Add the structural styles toggle right here -->
+            <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-top:10px; color:#5cf27e; font-weight:bold;">
+                <input type="checkbox" id="toggleDoorsVisible" checked style="width:auto; margin:0;">
+                Show Doors & Drawers
+            </label>
         </div>
 
         <div class="section">
@@ -617,6 +622,9 @@
             document.getElementById('opacity').addEventListener('input', updateOpacity);
             document.getElementById('opacitySelectedOnly').addEventListener('change', syncOpacitySlider);
 
+            // Add the visibility toggle execution listener hook here
+            document.getElementById('toggleDoorsVisible').addEventListener('change', updateDoorsVisibility);
+
             // View buttons
             document.querySelectorAll('[data-view]').forEach(b => {
                 b.addEventListener('click', () => { setView(b.dataset.view); b.blur(); });
@@ -813,6 +821,24 @@
             }
         }
 
+        function updateDoorsVisibility() {
+            const showDoors = document.getElementById('toggleDoorsVisible').checked;
+            
+            if (!modelRoot) return;
+
+            // Traverse the complete scene architecture tree 
+            modelRoot.traverse(o => {
+                if (o.isMesh && o.userData) {
+                    const isFacePanel = (o.userData.panel_type === "Door" || o.userData.panel_type === "Drawer");
+                    
+                    if (isFacePanel) {
+                        // Toggle element visibility status instantly
+                        o.visible = showDoors;
+                    }
+                }
+            });
+        }
+
 
 
         function syncOpacitySlider() {
@@ -975,7 +1001,10 @@
                     obj.material.roughness = 0.7;
                     obj.material.metalness = 0.1;
                 }
+                // Force components visible again upon layout resets
+                if (obj.isMesh) obj.visible = true;
             });
+            document.getElementById('toggleDoorsVisible').checked = true;
             resetOpacity();
         }
 
