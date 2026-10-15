@@ -78,7 +78,7 @@
 
     <div id="ui">
         <h2 style="margin:0 0 8px 0;">🎨 IdealKitchens <br>
-        Hein 📡 079 999 2215_1510_08</h2>
+        Hein 📡 079 999 2215_1510_09</h2>
         <small id="modelName" style="color:#aaa;">Loading model list...</small>
         
         <div class="section">
@@ -121,6 +121,11 @@
                 <input type="checkbox" id="toggleDoorsVisible" checked style="width:auto; margin:0;">
                 Show Doors & Drawers
             </label>
+            <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-top:6px; color:#5cc7f2; font-weight:bold;">
+                <input type="checkbox" id="enableMotion" style="width:auto; margin:0;">
+                Enable Motion
+            </label>
+
         </div>
 
         <div class="section">
@@ -179,8 +184,9 @@
         let currentModel = new URLSearchParams(window.location.search).get('model') || 'scene.glb';
         let uiVisible = true;
         let hinges = new Map(); // 1510_08 Tracks virtual hinges assigned to unique door mesh components
+        let drawers = new Map(); // 1510_09 Tracks linear slide parameters for drawer units
         let doorAnimations = []; // 1510_08 Collection of active swinging interpolation frames
-
+        let motionEnabled = false; // 1510_09 Controls mode switching behavior
 
         let hoverLabel = null;
         let modelRoot = null;   // loaded GLB scene (used for opacity + view fitting)
@@ -285,7 +291,7 @@
             }
         }
 
-        function onClick(event) {
+        function onClick1510_09(event) {
             const mouse = getMouseVector2(event);
             const raycaster = new THREE.Raycaster();
             
@@ -301,6 +307,47 @@
                     return; // Bypass standard color selection assignments
                 }
                 
+                while (obj && !obj.material) {
+                    obj = obj.parent;
+                }
+                
+                if (obj && obj.material) {
+                    selectedMesh = obj;
+                    syncOpacitySlider();
+                    
+                    if (selectedMesh.material.roughness !== undefined) {
+                        document.getElementById('roughness').value = selectedMesh.material.roughness;
+                        document.getElementById('roughVal').textContent = selectedMesh.material.roughness.toFixed(2);
+                    }
+                    if (selectedMesh.material.metalness !== undefined) {
+                        document.getElementById('metalness').value = selectedMesh.material.metalness;
+                        document.getElementById('metalVal').textContent = selectedMesh.material.metalness.toFixed(2);
+                    }
+                }
+            }
+        }
+        function onClick(event) {
+            const mouse = getMouseVector2(event);
+            const raycaster = new THREE.Raycaster();
+            
+            raycaster.setFromCamera(mouse, camera);
+            const hits = raycaster.intersectObjects(scene.children, true);
+            
+            if (hits.length > 0) {
+                let obj = hits[0].object;
+                
+                // === INTERCEPT CLICKS ONLY IF MOTION IS ACTIVE ===
+                if (motionEnabled && obj.isMesh && obj.userData) {
+                    if (obj.userData.panel_type === "Door") {
+                        toggleDoorHingeAction(obj);
+                        return; 
+                    } else if (obj.userData.panel_type === "Drawer") {
+                        toggleDrawerSlideAction(obj);
+                        return;
+                    }
+                }
+                
+                // === REGULAR SYSTEM SELECTION LOGIC ===
                 while (obj && !obj.material) {
                     obj = obj.parent;
                 }
@@ -534,8 +581,6 @@
             });
         }
 
-
-
         function init() {
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0xBCC8C6);
@@ -662,8 +707,13 @@
             document.getElementById('opacity').addEventListener('input', updateOpacity);
             document.getElementById('opacitySelectedOnly').addEventListener('change', syncOpacitySlider);
 
-            // Add the visibility toggle execution listener hook here
+            // 1510_08 Add the visibility toggle execution listener hook here
             document.getElementById('toggleDoorsVisible').addEventListener('change', updateDoorsVisibility);
+
+            // 1510_09 Motion Configuration Mode Control
+            document.getElementById('enableMotion').addEventListener('change', (e) => {
+                motionEnabled = e.target.checked;
+            });
 
             // View buttons
             document.querySelectorAll('[data-view]').forEach(b => {
@@ -677,7 +727,6 @@
             controls.addEventListener('start', () => { camTween = null; });
         }
 
-        // ---------------- OPACITY / TRANSPARENCY ----------------
         // ---------------- OPACITY / TRANSPARENCY ----------------
         function getMats(obj) {
             if (!obj || !obj.material) return [];
@@ -879,7 +928,7 @@
             });
         }
 
-                function getOrCreateHinge(mesh) {
+        function getOrCreateHinge(mesh) {
             if (hinges.has(mesh)) return hinges.get(mesh);
 
             // 1. Calculate local geometry extents to find the hinge edge line
@@ -930,7 +979,7 @@
             }
         }
 
-        function updateDoorAnimations() {
+        function updateDoorAnimations1510_09() {
             // Process angular positions using standard frame damping functions
             for (let i = doorAnimations.length - 1; i >= 0; i--) {
                 const hinge = doorAnimations[i];
@@ -944,6 +993,66 @@
                     // Frame calculation speed modifier (Damping coefficient set to 0.15)
                     hinge.currentAngle += delta * 0.15;
                     hinge.group.rotation.y = hinge.currentAngle;
+                }
+            }
+        }
+
+        function getOrCreateDrawer(mesh) {
+            if (drawers.has(mesh)) return drawers.get(mesh);
+
+            // Establish standard local position baseline metrics
+            const drawerData = {
+                mesh: mesh,
+                isOpen: false,
+                initialZ: mesh.position.z,
+                // Fallback to 0.45m pull-out value if metadata is missing
+                targetOffset: mesh.userData.slide_depth || 0.45, 
+                currentZ: mesh.position.z,
+                targetZ: mesh.position.z
+            };
+
+            drawers.set(mesh, drawerData);
+            return drawerData;
+        }
+
+        function toggleDrawerSlideAction(mesh) {
+            const drawer = getOrCreateDrawer(mesh);
+            
+            drawer.isOpen = !drawer.isOpen;
+            // Slide out along the Z axis forward path vector clearing the carcass geometry
+            drawer.targetZ = drawer.isOpen ? (drawer.initialZ + drawer.targetOffset) : drawer.initialZ;
+
+            if (!doorAnimations.includes(drawer)) {
+                doorAnimations.push(drawer);
+            }
+        }
+
+        function updateDoorAnimations() {
+            for (let i = doorAnimations.length - 1; i >= 0; i--) {
+                const item = doorAnimations[i];
+                
+                if (item.group) {
+                    // --- Rotational Hinge Calculations ---
+                    const delta = item.targetAngle - item.currentAngle;
+                    if (Math.abs(delta) < 0.001) {
+                        item.currentAngle = item.targetAngle;
+                        item.group.rotation.y = item.currentAngle;
+                        doorAnimations.splice(i, 1);
+                    } else {
+                        item.currentAngle += delta * 0.15;
+                        item.group.rotation.y = item.currentAngle;
+                    }
+                } else {
+                    // --- Linear Drawer Slide Calculations ---
+                    const delta = item.targetZ - item.currentZ;
+                    if (Math.abs(delta) < 0.0005) {
+                        item.currentZ = item.targetZ;
+                        item.mesh.position.z = item.currentZ;
+                        doorAnimations.splice(i, 1);
+                    } else {
+                        item.currentZ += delta * 0.15;
+                        item.mesh.position.z = item.currentZ;
+                    }
                 }
             }
         }
@@ -1100,7 +1209,7 @@
             document.getElementById('metalVal').textContent = selectedMesh.material.metalness.toFixed(2);
         }
 
-        function resetMaterial() {
+        function resetMaterial1510_09() {
             scene.traverse((obj) => {
                 if (obj.material) {
                     obj.material.color.set(0xeeeeee);
@@ -1115,6 +1224,43 @@
             document.getElementById('toggleDoorsVisible').checked = true;
             resetOpacity();
         }
+
+        function resetMaterial() {
+            // Snap hinge components closed
+            hinges.forEach(h => {
+                h.isOpen = false;
+                h.currentAngle = 0;
+                h.targetAngle = 0;
+                h.group.rotation.y = 0;
+            });
+            
+            // Snap drawer tracks shut
+            drawers.forEach(d => {
+                d.isOpen = false;
+                d.currentZ = d.initialZ;
+                d.targetZ = d.initialZ;
+                d.mesh.position.z = d.initialZ;
+            });
+            
+            doorAnimations = []; // Clear current engine calculations queue
+
+            scene.traverse((obj) => {
+                if (obj.material) {
+                    obj.material.color.set(0xeeeeee);
+                    obj.material.map = null;
+                    obj.material.normalMap = null;
+                    obj.material.roughness = 0.7;
+                    obj.material.metalness = 0.1;
+                }
+                if (obj.isMesh) obj.visible = true;
+            });
+            
+            document.getElementById('toggleDoorsVisible').checked = true;
+            document.getElementById('enableMotion').checked = false;
+            motionEnabled = false;
+            resetOpacity();
+        }
+
 
         function resetColors() {
             scene.traverse(o => { if (o.material?.color) o.material.color.set(0xeeeeee); });
