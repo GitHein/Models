@@ -78,7 +78,7 @@
 
     <div id="ui">
         <h2 style="margin:0 0 8px 0;">🎨 IdealKitchens <br>
-        Hein 📡 079 999 2215_1510_09</h2>
+        Hein 📡 079 999 2215_1510_11</h2>
         <small id="modelName" style="color:#aaa;">Loading model list...</small>
         
         <div class="section">
@@ -326,7 +326,7 @@
                 }
             }
         }
-        function onClick(event) {
+        function onClick1510_11(event) {
             const mouse = getMouseVector2(event);
             const raycaster = new THREE.Raycaster();
             
@@ -348,6 +348,52 @@
                 }
                 
                 // === REGULAR SYSTEM SELECTION LOGIC ===
+                while (obj && !obj.material) {
+                    obj = obj.parent;
+                }
+                
+                if (obj && obj.material) {
+                    selectedMesh = obj;
+                    syncOpacitySlider();
+                    
+                    if (selectedMesh.material.roughness !== undefined) {
+                        document.getElementById('roughness').value = selectedMesh.material.roughness;
+                        document.getElementById('roughVal').textContent = selectedMesh.material.roughness.toFixed(2);
+                    }
+                    if (selectedMesh.material.metalness !== undefined) {
+                        document.getElementById('metalness').value = selectedMesh.material.metalness;
+                        document.getElementById('metalVal').textContent = selectedMesh.material.metalness.toFixed(2);
+                    }
+                }
+            }
+        }
+
+        function onClick(event) {
+            const mouse = getMouseVector2(event);
+            const raycaster = new THREE.Raycaster();
+            
+            raycaster.setFromCamera(mouse, camera);
+            const hits = raycaster.intersectObjects(scene.children, true);
+            
+            if (hits.length > 0) {
+                let obj = hits[0].object;
+                
+                // === AUTOMATICALLY CLIMB UP TO TOPMOST PANEL TARGET OBJECT ===
+                // If a user clicks a shaker stile, this redirects selection context to the main container
+                if (obj.parent && (obj.parent.userData.panel_type === "Door" || obj.parent.userData.panel_type === "Drawer")) {
+                    obj = obj.parent;
+                }
+                
+                if (motionEnabled && obj.isMesh && obj.userData) {
+                    if (obj.userData.panel_type === "Door") {
+                        toggleDoorHingeAction(obj);
+                        return; 
+                    } else if (obj.userData.panel_type === "Drawer") {
+                        toggleDrawerSlideAction(obj);
+                        return;
+                    }
+                }
+                
                 while (obj && !obj.material) {
                     obj = obj.parent;
                 }
