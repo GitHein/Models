@@ -8,6 +8,13 @@
       "unitCount": 6
     },
     {
+      "id": "Test",
+      "name": "Test",
+      "file": "Test.glb",
+      "timestamp": "2026-16-10",
+      "unitCount": 2
+    },
+    {
       "id": "Mooikloof_Kombuis",
       "name": "Mooikloof_Kombuis",
       "file": "Mooikloof_Kombuis.glb",
