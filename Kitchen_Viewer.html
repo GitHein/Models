@@ -78,7 +78,7 @@
 
     <div id="ui">
         <h2 style="margin:0 0 8px 0;">🎨 IdealKitchens <br>
-        Hein 📡 079 999 2215_1610_00</h2>
+        Hein 📡 079 999 2215_1610_02</h2>
         <small id="modelName" style="color:#aaa;">Loading model list...</small>
         
         <div class="section">
@@ -964,7 +964,7 @@
             }
         }
 
-        function triggerGlobalMotion(openEverything) {
+        function triggerGlobalMotion1610_02(openEverything) {
             if (!modelRoot) return;
 
             // Automatically switch on motion execution calculations state flags
@@ -988,6 +988,42 @@
                             if (!doorAnimations.includes(drawer)) doorAnimations.push(drawer);
                         }
                     }
+                }
+            });
+        }
+
+        function triggerGlobalMotion(openEverything) {
+            if (!modelRoot) return;
+
+            document.getElementById('enableMotion').checked = true;
+            motionEnabled = true;
+
+            // 1) SNAPSHOT: read-only pass, no re-parenting here
+            const doorMeshes = [];
+            const drawerMeshes = [];
+            modelRoot.traverse(o => {
+                if (!o.isMesh || !o.userData) return;
+                if (o.userData.panel_type === "Door") doorMeshes.push(o);
+                else if (o.userData.panel_type === "Drawer") drawerMeshes.push(o);
+            });
+            console.log(`Open/Close: ${doorMeshes.length} doors, ${drawerMeshes.length} drawers`);
+
+            // 2) MUTATE: safe now, we're iterating our own array
+            doorMeshes.forEach(mesh => {
+                const hinge = getOrCreateHinge(mesh);
+                if (hinge.isOpen !== openEverything) {
+                    hinge.isOpen = openEverything;
+                    hinge.targetAngle = openEverything ? -Math.PI * 0.65 : 0;
+                    if (!doorAnimations.includes(hinge)) doorAnimations.push(hinge);
+                }
+            });
+
+            drawerMeshes.forEach(mesh => {
+                const drawer = getOrCreateDrawer(mesh);
+                if (drawer.isOpen !== openEverything) {
+                    drawer.isOpen = openEverything;
+                    drawer.targetZ = openEverything ? (drawer.initialZ + drawer.targetOffset) : drawer.initialZ;
+                    if (!doorAnimations.includes(drawer)) doorAnimations.push(drawer);
                 }
             });
         }
