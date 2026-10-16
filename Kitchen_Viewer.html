@@ -78,7 +78,7 @@
 
     <div id="ui">
         <h2 style="margin:0 0 8px 0;">🎨 IdealKitchens <br>
-        Hein 📡 079 999 2215_1610_08</h2>
+        Hein 📡 079 999 2215_1610_09</h2>
         <small id="modelName" style="color:#aaa;">Loading model list...</small>
         
         <div class="section">
@@ -437,7 +437,7 @@
             const currentRoughness = parseFloat(document.getElementById('roughness').value);
             const currentMetalness = parseFloat(document.getElementById('metalness').value);
             const factor = parseFloat(document.getElementById('opacity').value);
-            const isFaceType = (panelKind(selectedMesh) !== null);
+            const isFaceType = isFaceMesh(selectedMesh);
 
             const loader = new THREE.TextureLoader();
 
@@ -468,7 +468,7 @@
                     if (isFaceType && modelRoot) {
                         // Apply texture to all front faces synchronously
                         modelRoot.traverse(o => {
-                            if (o.isMesh && (panelKind(o) !== null)) {
+                            if (o.isMesh && isFaceMesh(o)) {
                                 if (o.material) o.material.dispose();
                                 o.material = createMaterialInstance();
                             }
@@ -712,12 +712,12 @@
             if (selectedOnly) {
                 if (!selectedMesh) return;
                 
-                const isFaceType = (panelKind(selectedMesh) !== null);
+                const isFaceType = isFaceMesh(selectedMesh);
 
                 if (isFaceType && modelRoot) {
                     // LINKED FACES BEHAVIOUR: Process all dynamic front panels inside the scene together
                     modelRoot.traverse(o => {
-                        if (o.isMesh && o.material && (panelKind(o) !== null)) {
+                        if (o.isMesh && o.material && isFaceMesh(o)) {
                             const mats = getMats(o);
                             const newMats = mats.map(m => setMaterialOpacity(m, factor, true));
                             o.material = newMats.length === 1 ? newMats[0] : newMats;
@@ -765,6 +765,12 @@
             if (!u || u.role === "visual") return null;
             if (u.panel_type === "Door" || u.panel_type === "Drawer") return u.panel_type;
             return null;
+        }
+
+        // "Face" = door, drawer or stile. Used for linked colour / texture / opacity.
+        function isFaceMesh(o) {
+            if (!o || !o.userData) return false;
+            return o.userData.role === "visual" || panelKind(o) !== null;
         }
 
         // Attach every visual piece to its owner front (matching part_id within the same unit),
@@ -1057,9 +1063,19 @@
         }
 
         function applyColor() {
-            if (selectedMesh?.material) {
-                selectedMesh.material.color.set(document.getElementById('colorPicker').value);
-                if (selectedMesh.material.map) selectedMesh.material.map = null;
+            if (!selectedMesh?.material) return;
+            const hex = document.getElementById('colorPicker').value;
+            const paint = (mesh) => {
+                getMats(mesh).forEach(m => {
+                    if (m.color) m.color.set(hex);
+                    if (m.map) { m.map = null; m.needsUpdate = true; }
+                });
+            };
+            if (isFaceMesh(selectedMesh) && modelRoot) {
+                // Doors, drawers and stiles are always coloured together
+                modelRoot.traverse(o => { if (o.isMesh && o.material && isFaceMesh(o)) paint(o); });
+            } else {
+                paint(selectedMesh);
             }
         }
 
