@@ -78,7 +78,7 @@
 
     <div id="ui">
         <h2 style="margin:0 0 8px 0;">🎨 IdealKitchens <br>
-        Hein 📡 079 999 2215_1610_05</h2>
+        Hein 📡 079 999 2215_1610_07</h2>
         <small id="modelName" style="color:#aaa;">Loading model list...</small>
         
         <div class="section">
@@ -265,35 +265,6 @@
         }
 
         // --- SELECTION LOGIC ---
-        function onClick1510_08(event) {
-            const mouse = getMouseVector2(event);
-            const raycaster = new THREE.Raycaster();
-            
-            raycaster.setFromCamera(mouse, camera);
-            const hits = raycaster.intersectObjects(scene.children, true);
-            
-            if (hits.length > 0) {
-                let obj = hits[0].object;
-                
-                while (obj && !obj.material) {
-                    obj = obj.parent;
-                }
-                
-                if (obj && obj.material) {
-                    selectedMesh = obj;
-                    syncOpacitySlider();
-                    
-                    if (selectedMesh.material.roughness !== undefined) {
-                        document.getElementById('roughness').value = selectedMesh.material.roughness;
-                        document.getElementById('roughVal').textContent = selectedMesh.material.roughness.toFixed(2);
-                    }
-                    if (selectedMesh.material.metalness !== undefined) {
-                        document.getElementById('metalness').value = selectedMesh.material.metalness;
-                        document.getElementById('metalVal').textContent = selectedMesh.material.metalness.toFixed(2);
-                    }
-                }
-            }
-        }
 
         function onClick(event) {
             const mouse = getMouseVector2(event);
@@ -455,55 +426,6 @@
                 //btn.onclick = () => applyTexture(tex.url);
                 btn.onclick = () => applyPBRMaterial(tex.diff, tex.normal)
                 grid.appendChild(btn);
-            });
-        }
-
-        function applyPBRMaterial_1510_05(diffuseUrl, normalUrl) {
-            if (!selectedMesh || !selectedMesh.material) {
-                alert("Please select an object first!");
-                return;
-            }
-
-            // Get current PBR values directly from your existing HTML sliders
-            const currentRoughness = parseFloat(document.getElementById('roughness').value);
-            const currentMetalness = parseFloat(document.getElementById('metalness').value);
-
-            const loader = new THREE.TextureLoader();
-
-            loader.load(diffuseUrl, (diffuseTex) => {
-                diffuseTex.wrapS = diffuseTex.wrapT = THREE.RepeatWrapping;
-                // Wood grain looks much better on vertical cabinets when it stretches taller (less horizontal tiling)
-                //diffuseTex.repeat.set(2, 4); 
-                // Change from (2, 4) to an even tile scale so the grain doesn't warp
-                diffuseTex.repeat.set(2, 2);
-
-
-                loader.load(normalUrl, (normalTex) => {
-                    normalTex.wrapS = normalTex.wrapT = THREE.RepeatWrapping;
-                    //normalTex.repeat.set(2, 4);
-                    // Change from (2, 4) to an even tile scale so the grain doesn't warp
-                    normalTex.repeat.set(2, 2);
-
-
-                    const newMat = new THREE.MeshStandardMaterial({
-                        map: diffuseTex,
-                        normalMap: normalTex,
-                        // Tone down the bump intensity so the cabinet wood doesn't look rough and splintery
-                        normalScale: new THREE.Vector2(0.15, 0.15), 
-                        roughness: currentRoughness,
-                        metalness: currentMetalness,
-                        transparent: true, // 1510 Allow transparency rendering calculations
-                        depthWrite: true,   // 1510 Maintain structure depth layout
-                        side: THREE.DoubleSide //1510 ◄ Ensure internal panels render backfaces completely
-                    });
-
-                    // Ensure our new cabinet material can react to any environmental lighting maps if present
-                    newMat.envMapIntensity = 1.0;
-
-                    setMaterialOpacity(newMat, getOpacityFactor(selectedMesh.material));
-                    if (selectedMesh.material) selectedMesh.material.dispose();
-                    selectedMesh.material = newMat;
-                });
             });
         }
 
@@ -753,30 +675,6 @@
             return mat;
         }
 
-        function setMaterialOpacity_1510_05(mat, factor, forceClone = false) {
-            if (!mat) return;
-
-            // Clone if we are operating on a single selected object
-            if (forceClone && !mat.userData._opacityCloned) {
-                mat = mat.clone();
-                mat.userData._opacityCloned = true;
-            }
-
-            if (mat.userData.baseOpacity === undefined) {
-                mat.userData.baseOpacity = mat.opacity ?? 1;
-                mat.userData.baseTransparent = mat.transparent ?? false;
-            }
-
-            mat.userData.opacityFactor = factor;
-            mat.opacity = mat.userData.baseOpacity * factor;
-
-            mat.transparent = factor < 0.999;
-            mat.depthWrite  = true;               // ← critical change
-            mat.needsUpdate = true;
-
-            return mat; // Always return the material instance back
-        }
-
         function setMaterialOpacity(mat, factor, forceClone = false) {
             if (!mat) return null;
 
@@ -860,54 +758,6 @@
             });
         }
 
-        function getOrCreateHinge1610_01(mesh) {
-            if (hinges.has(mesh)) return hinges.get(mesh);
-
-            mesh.geometry.computeBoundingBox();
-            const bbox = mesh.geometry.boundingBox;
-            const sizeX = bbox.max.x - bbox.min.x;
-            
-            const hingeGroup = new THREE.Group();
-            const pivotOffset = bbox.min.x; 
-
-            hingeGroup.position.copy(mesh.position);
-            hingeGroup.position.x += pivotOffset; 
-            
-            mesh.position.set(-pivotOffset, 0, 0);
-
-            const originalParent = mesh.parent;
-            originalParent.add(hingeGroup);
-            hingeGroup.add(mesh);
-
-            // === HIERARCHY FIX: FORCE CHILD STILES INTO THE PIVOT GROUP ===
-            // Gltf stores children inside mesh.children array. We safely migrate them to the pivot group layer.
-            const stilesToMigrate = [];
-            mesh.traverse(child => {
-                if (child !== mesh && child.isMesh) {
-                    stilesToMigrate.push(child);
-                }
-            });
-
-            stilesToMigrate.forEach(stile => {
-                // Combine child matrix into world space transformations
-                stile.applyMatrix4(mesh.matrix);
-                hingeGroup.add(stile); // Reparent safely to the group wrapper
-                // Offset position relative to the new pivot point
-                stile.position.x -= pivotOffset;
-            });
-
-            const hingeData = {
-                group: hingeGroup,
-                mesh: mesh,
-                isOpen: false,
-                currentAngle: 0,
-                targetAngle: 0
-            };
-
-            hinges.set(mesh, hingeData);
-            return hingeData;
-        }
-
         function getOrCreateHinge(mesh) {
             if (hinges.has(mesh)) return hinges.get(mesh);
 
@@ -969,34 +819,6 @@
             if (!doorAnimations.includes(drawer)) {
                 doorAnimations.push(drawer);
             }
-        }
-
-        function triggerGlobalMotion1610_02(openEverything) {
-            if (!modelRoot) return;
-
-            // Automatically switch on motion execution calculations state flags
-            document.getElementById('enableMotion').checked = true;
-            motionEnabled = true;
-
-            modelRoot.traverse(o => {
-                if (o.isMesh && o.userData && o.userData.panel_type) {
-                    if (o.userData.panel_type === "Door") {
-                        const hinge = getOrCreateHinge(o);
-                        if (hinge.isOpen !== openEverything) {
-                            hinge.isOpen = openEverything;
-                            hinge.targetAngle = openEverything ? -Math.PI * 0.65 : 0;
-                            if (!doorAnimations.includes(hinge)) doorAnimations.push(hinge);
-                        }
-                    } else if (o.userData.panel_type === "Drawer") {
-                        const drawer = getOrCreateDrawer(o);
-                        if (drawer.isOpen !== openEverything) {
-                            drawer.isOpen = openEverything;
-                            drawer.targetZ = openEverything ? (drawer.initialZ + drawer.targetOffset) : drawer.initialZ;
-                            if (!doorAnimations.includes(drawer)) doorAnimations.push(drawer);
-                        }
-                    }
-                }
-            });
         }
 
         function triggerGlobalMotion(openEverything) {
@@ -1215,22 +1037,6 @@
             document.getElementById('metalVal').textContent = selectedMesh.material.metalness.toFixed(2);
         }
 
-        function resetMaterial1510_09() {
-            scene.traverse((obj) => {
-                if (obj.material) {
-                    obj.material.color.set(0xeeeeee);
-                    obj.material.map = null;
-                    obj.material.normalMap = null;
-                    obj.material.roughness = 0.7;
-                    obj.material.metalness = 0.1;
-                }
-                // Force components visible again upon layout resets
-                if (obj.isMesh) obj.visible = true;
-            });
-            document.getElementById('toggleDoorsVisible').checked = true;
-            resetOpacity();
-        }
-
         function resetMaterial() {
             // Snap hinge components closed
             hinges.forEach(h => {
@@ -1298,13 +1104,6 @@
             labelRenderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        function animate1510_08() {
-            requestAnimationFrame(animate);
-            updateCameraTween();
-            controls.update();
-            renderer.render(scene, camera);
-            labelRenderer.render(scene, camera);
-        }
         function animate() {
             requestAnimationFrame(animate);
             
