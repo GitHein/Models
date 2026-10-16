@@ -295,83 +295,6 @@
             }
         }
 
-        function onClick1510_09(event) {
-            const mouse = getMouseVector2(event);
-            const raycaster = new THREE.Raycaster();
-            
-            raycaster.setFromCamera(mouse, camera);
-            const hits = raycaster.intersectObjects(scene.children, true);
-            
-            if (hits.length > 0) {
-                let obj = hits[0].object;
-                
-                // If it is a door panel asset, pass it straight to the hinge engine loop
-                if (obj.isMesh && obj.userData && obj.userData.panel_type === "Door") {
-                    toggleDoorHingeAction(obj);
-                    return; // Bypass standard color selection assignments
-                }
-                
-                while (obj && !obj.material) {
-                    obj = obj.parent;
-                }
-                
-                if (obj && obj.material) {
-                    selectedMesh = obj;
-                    syncOpacitySlider();
-                    
-                    if (selectedMesh.material.roughness !== undefined) {
-                        document.getElementById('roughness').value = selectedMesh.material.roughness;
-                        document.getElementById('roughVal').textContent = selectedMesh.material.roughness.toFixed(2);
-                    }
-                    if (selectedMesh.material.metalness !== undefined) {
-                        document.getElementById('metalness').value = selectedMesh.material.metalness;
-                        document.getElementById('metalVal').textContent = selectedMesh.material.metalness.toFixed(2);
-                    }
-                }
-            }
-        }
-        function onClick1510_11(event) {
-            const mouse = getMouseVector2(event);
-            const raycaster = new THREE.Raycaster();
-            
-            raycaster.setFromCamera(mouse, camera);
-            const hits = raycaster.intersectObjects(scene.children, true);
-            
-            if (hits.length > 0) {
-                let obj = hits[0].object;
-                
-                // === INTERCEPT CLICKS ONLY IF MOTION IS ACTIVE ===
-                if (motionEnabled && obj.isMesh && obj.userData) {
-                    if (obj.userData.panel_type === "Door") {
-                        toggleDoorHingeAction(obj);
-                        return; 
-                    } else if (obj.userData.panel_type === "Drawer") {
-                        toggleDrawerSlideAction(obj);
-                        return;
-                    }
-                }
-                
-                // === REGULAR SYSTEM SELECTION LOGIC ===
-                while (obj && !obj.material) {
-                    obj = obj.parent;
-                }
-                
-                if (obj && obj.material) {
-                    selectedMesh = obj;
-                    syncOpacitySlider();
-                    
-                    if (selectedMesh.material.roughness !== undefined) {
-                        document.getElementById('roughness').value = selectedMesh.material.roughness;
-                        document.getElementById('roughVal').textContent = selectedMesh.material.roughness.toFixed(2);
-                    }
-                    if (selectedMesh.material.metalness !== undefined) {
-                        document.getElementById('metalness').value = selectedMesh.material.metalness;
-                        document.getElementById('metalVal').textContent = selectedMesh.material.metalness.toFixed(2);
-                    }
-                }
-            }
-        }
-
         function onClick(event) {
             const mouse = getMouseVector2(event);
             const raycaster = new THREE.Raycaster();
@@ -874,58 +797,6 @@
         }
 
 
-
-        function updateOpacity_1510_11() {
-            const factor = parseFloat(document.getElementById('opacity').value);
-            document.getElementById('opacityVal').textContent = Math.round(factor * 100);
-
-            const selectedOnly = document.getElementById('opacitySelectedOnly').checked;
-
-            if (selectedOnly) {
-                if (!selectedMesh) return;
-                const mats = getMats(selectedMesh);
-                const newMats = mats.map(m => {
-                    const result = setMaterialOpacity(m, factor, true);
-                    // if a clone was returned, re-assign it
-                    return result || m;
-                });
-                selectedMesh.material = newMats.length === 1 ? newMats[0] : newMats;
-            } else if (modelRoot) {
-                modelRoot.traverse(o => {
-                    getMats(o).forEach(m => setMaterialOpacity(m, factor, false));
-                });
-            }
-        }
-
-        function updateOpacity_1510_05() {
-            const factor = parseFloat(document.getElementById('opacity').value);
-            document.getElementById('opacityVal').textContent = Math.round(factor * 100);
-
-            const selectedOnly = document.getElementById('opacitySelectedOnly').checked;
-
-            if (selectedOnly) {
-                if (!selectedMesh) return;
-                const mats = getMats(selectedMesh);
-                const newMats = mats.map(m => {
-                    const result = setMaterialOpacity(m, factor, true);
-                    return result || m;
-                });
-                selectedMesh.material = newMats.length === 1 ? newMats[0] : newMats[0];
-            } else if (modelRoot) {
-                modelRoot.traverse(o => {
-                    if (o.isMesh && o.material) {
-                        const mats = getMats(o);
-                        const newMats = mats.map(m => {
-                            // Force unique cloning globally so objects don't clip out each other's interior spaces
-                            const result = setMaterialOpacity(m, factor, true); 
-                            return result || m;
-                        });
-                        o.material = newMats.length === 1 ? newMats[0] : newMats;
-                    }
-                });
-            }
-        }
-
         function updateOpacity() {
             const factor = parseFloat(document.getElementById('opacity').value);
             document.getElementById('opacityVal').textContent = Math.round(factor * 100);
@@ -982,45 +853,7 @@
             });
         }
 
-        function getOrCreateHinge1610_00(mesh) {
-            if (hinges.has(mesh)) return hinges.get(mesh);
-
-            // 1. Calculate local geometry extents to find the hinge edge line
-            mesh.geometry.computeBoundingBox();
-            const bbox = mesh.geometry.boundingBox;
-            const sizeX = bbox.max.x - bbox.min.x;
-            
-            // 2. Generate the temporary parent element to serve as the hinge
-            const hingeGroup = new THREE.Group();
-            
-            // Determine left vs right hinge placement based on relative parent collection positioning
-            // Default setup assigns the pivot to the local negative X edge boundary point
-            const pivotOffset = bbox.min.x; 
-
-            hingeGroup.position.copy(mesh.position);
-            hingeGroup.position.x += pivotOffset; 
-            
-            // Move original mesh coordinates down relative to the pivot space structure
-            mesh.position.set(-pivotOffset, 0, 0);
-
-            // 3. Re-link parent structures safely within the operational scene architecture
-            const originalParent = mesh.parent;
-            originalParent.add(hingeGroup);
-            hingeGroup.add(mesh);
-
-            const hingeData = {
-                group: hingeGroup,
-                mesh: mesh,
-                isOpen: false,
-                currentAngle: 0,
-                targetAngle: 0
-            };
-
-            hinges.set(mesh, hingeData);
-            return hingeData;
-        }
-
-        function getOrCreateHinge(mesh) {
+        function getOrCreateHinge1610_01(mesh) {
             if (hinges.has(mesh)) return hinges.get(mesh);
 
             mesh.geometry.computeBoundingBox();
@@ -1068,6 +901,26 @@
             return hingeData;
         }
 
+        function getOrCreateHinge(mesh) {
+            if (hinges.has(mesh)) return hinges.get(mesh);
+
+            mesh.geometry.computeBoundingBox();
+            const pivotOffset = mesh.geometry.boundingBox.min.x;
+
+            const hingeGroup = new THREE.Group();
+            hingeGroup.position.copy(mesh.position);
+            hingeGroup.position.x += pivotOffset;
+            mesh.position.set(-pivotOffset, 0, 0);
+
+            const originalParent = mesh.parent;
+            originalParent.add(hingeGroup);
+            hingeGroup.add(mesh);   // stiles stay children of mesh and follow it
+
+            const hingeData = { group: hingeGroup, mesh, isOpen: false, currentAngle: 0, targetAngle: 0 };
+            hinges.set(mesh, hingeData);
+            return hingeData;
+        }
+
         function toggleDoorHingeAction(mesh) {
             const hinge = getOrCreateHinge(mesh);
             
@@ -1078,24 +931,6 @@
             // Register within runtime frame ticks loop if it isn't active
             if (!doorAnimations.includes(hinge)) {
                 doorAnimations.push(hinge);
-            }
-        }
-
-        function updateDoorAnimations1510_09() {
-            // Process angular positions using standard frame damping functions
-            for (let i = doorAnimations.length - 1; i >= 0; i--) {
-                const hinge = doorAnimations[i];
-                const delta = hinge.targetAngle - hinge.currentAngle;
-
-                if (Math.abs(delta) < 0.001) {
-                    hinge.currentAngle = hinge.targetAngle;
-                    hinge.group.rotation.y = hinge.currentAngle;
-                    doorAnimations.splice(i, 1); // Cleanly drop finished calculations
-                } else {
-                    // Frame calculation speed modifier (Damping coefficient set to 0.15)
-                    hinge.currentAngle += delta * 0.15;
-                    hinge.group.rotation.y = hinge.currentAngle;
-                }
             }
         }
 
@@ -1157,37 +992,6 @@
             });
         }
 
-
-        function updateDoorAnimations1610_00() {
-            for (let i = doorAnimations.length - 1; i >= 0; i--) {
-                const item = doorAnimations[i];
-                
-                if (item.group) {
-                    // --- Rotational Hinge Calculations ---
-                    const delta = item.targetAngle - item.currentAngle;
-                    if (Math.abs(delta) < 0.001) {
-                        item.currentAngle = item.targetAngle;
-                        item.group.rotation.y = item.currentAngle;
-                        doorAnimations.splice(i, 1);
-                    } else {
-                        item.currentAngle += delta * 0.15;
-                        item.group.rotation.y = item.currentAngle;
-                    }
-                } else {
-                    // --- Linear Drawer Slide Calculations ---
-                    const delta = item.targetZ - item.currentZ;
-                    if (Math.abs(delta) < 0.0005) {
-                        item.currentZ = item.targetZ;
-                        item.mesh.position.z = item.currentZ;
-                        doorAnimations.splice(i, 1);
-                    } else {
-                        item.currentZ += delta * 0.15;
-                        item.mesh.position.z = item.currentZ;
-                    }
-                }
-            }
-        }
-
         function updateDoorAnimations() {
             for (let i = doorAnimations.length - 1; i >= 0; i--) {
                 const item = doorAnimations[i];
@@ -1204,29 +1008,14 @@
                         item.group.rotation.y = item.currentAngle;
                     }
                 } else {
-                    // --- Linear Drawer Slide Engine Pass ---
                     const delta = item.targetZ - item.currentZ;
                     if (Math.abs(delta) < 0.0005) {
                         item.currentZ = item.targetZ;
-                        item.mesh.position.z = item.currentZ;
-                        
-                        // Move any nested child stiles along with the main drawer mesh
-                        item.mesh.traverse(child => {
-                            if (child !== item.mesh && child.isMesh) {
-                                child.position.z = item.currentZ;
-                            }
-                        });
                         doorAnimations.splice(i, 1);
                     } else {
                         item.currentZ += delta * 0.15;
-                        item.mesh.position.z = item.currentZ;
-                        
-                        item.mesh.traverse(child => {
-                            if (child !== item.mesh && child.isMesh) {
-                                child.position.z = item.currentZ;
-                            }
-                        });
                     }
+                    item.mesh.position.z = item.currentZ;
                 }
             }
         }
@@ -1396,42 +1185,6 @@
                 if (obj.isMesh) obj.visible = true;
             });
             document.getElementById('toggleDoorsVisible').checked = true;
-            resetOpacity();
-        }
-
-        function resetMaterial1510_12() {
-            // Snap hinge components closed
-            hinges.forEach(h => {
-                h.isOpen = false;
-                h.currentAngle = 0;
-                h.targetAngle = 0;
-                h.group.rotation.y = 0;
-            });
-            
-            // Snap drawer tracks shut
-            drawers.forEach(d => {
-                d.isOpen = false;
-                d.currentZ = d.initialZ;
-                d.targetZ = d.initialZ;
-                d.mesh.position.z = d.initialZ;
-            });
-            
-            doorAnimations = []; // Clear current engine calculations queue
-
-            scene.traverse((obj) => {
-                if (obj.material) {
-                    obj.material.color.set(0xeeeeee);
-                    obj.material.map = null;
-                    obj.material.normalMap = null;
-                    obj.material.roughness = 0.7;
-                    obj.material.metalness = 0.1;
-                }
-                if (obj.isMesh) obj.visible = true;
-            });
-            
-            document.getElementById('toggleDoorsVisible').checked = true;
-            document.getElementById('enableMotion').checked = false;
-            motionEnabled = false;
             resetOpacity();
         }
 
