@@ -1,6 +1,13 @@
 {
   "models": [
     {
+      "id": "Trudie",
+      "name": "Trudie",
+      "file": "Trudie.glb",
+      "timestamp": "2026-10-17",
+      "unitCount": 12
+    },
+    {
       "id": "Oelofse",
       "name": "Oelofse",
       "file": "Oelofse.glb",
