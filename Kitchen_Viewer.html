@@ -547,10 +547,22 @@
                 scene.add(model);
                 linkVisualsToOwners(model);
 
-                // Post-load material policy:
-                //   components → keep GLB opacity, clone mats so units never share them, lock vs slider
-                //   units      → opaque, slider-ready
+                // Keep track of materials we have already processed to prevent double-mutating shared materials
+                const processedMaterials = new Map();
+                // Keep track of CSS2D objects to safely remove after traversal
+                const css2dToRemove = [];
+
                 model.traverse((child) => {
+                    // Safe check for userData structural safety
+                    if (!child.userData) child.userData = {};
+
+                    // Queue CSS2DObjects for safe post-traversal removal to avoid breaking the iterator
+                    if (child.userData.unit_label && !child.userData.is_unit && child.children) {
+                        child.children.forEach(c => {
+                            if (c instanceof THREE.CSS2DObject) css2dToRemove.push({ parent: child, child: c });
+                        });
+                    }
+
                     if (!child.isMesh || !child.material) return;
 
                     const isComp = isComponentObject(child);
@@ -558,37 +570,56 @@
 
                     const outMats = srcMats.map(m => {
                         if (!m) return m;
-                        // Always clone for components so we never mutate a material instance shared with a unit
-                        const mat = isComp ? m.clone() : m;
-                        mat.envMapIntensity = 1.0;
-                        if (mat.color && mat.color.getHex && mat.color.getHex() === 0xffffff) {
-                            mat.color.setHex(0xf5f5f5);
-                        }
-                        mat.side = THREE.DoubleSide;
-                        mat.userData = mat.userData || {};
 
+                        // Policy: Components always clone to completely isolate mutations from units
+                        // Units only clone if they share an instance with a component or another unit to prevent global state leaks
+                        let mat = m;
                         if (isComp) {
-                            const op = (m.opacity !== undefined && m.opacity !== null) ? m.opacity : 1;
-                            mat.opacity = op;
-                            mat.userData._componentLocked = true;
-                            mat.userData.baseOpacity = op;
-                            mat.userData.opacityFactor = 1;
-                            mat.transparent = op < 0.999;
-                            mat.depthWrite = op >= 0.999;
-                        } else {
-                            mat.transparent = false;
-                            mat.depthWrite = true;
+                            mat = m.clone();
+                        } else if (processedMaterials.has(m) && processedMaterials.get(m).wasComp) {
+                            // If this material was already processed as a component material, a Unit cannot reuse it raw
+                            mat = m.clone();
                         }
-                        mat.needsUpdate = true;
+
+                        // Track this material's context
+                        if (!processedMaterials.has(mat)) {
+                            processedMaterials.set(mat, { wasComp: isComp });
+
+                            // Common baseline configurations
+                            mat.envMapIntensity = 1.0;
+                            if (mat.color && typeof mat.color.getHex === 'function' && mat.color.getHex() === 0xffffff) {
+                                mat.color.setHex(0xf5f5f5);
+                            }
+                            mat.side = THREE.DoubleSide;
+                            if (!mat.userData) mat.userData = {};
+
+                            // Post-load material policy application
+                            if (isComp) {
+                                const op = (mat.opacity !== undefined && mat.opacity !== null) ? mat.opacity : 1;
+                                mat.opacity = op;
+                                mat.userData._componentLocked = true;
+                                mat.userData.baseOpacity = op;
+                                mat.userData.opacityFactor = 1;
+                                mat.transparent = op < 0.999;
+                                mat.depthWrite = op >= 0.999;
+                            } else {
+                                // Units -> Opaque, Slider-Ready baseline
+                                mat.transparent = false;
+                                mat.depthWrite = true;
+                            }
+                            mat.needsUpdate = true;
+                        }
+
                         return mat;
                     });
 
+                    // Reassign the clean array/material back to the child mesh
                     child.material = outMats.length === 1 ? outMats[0] : outMats;
-
-                    if (child.userData && child.userData.unit_label && !child.userData.is_unit) {
-                        child.remove(...child.children.filter(c => c instanceof THREE.CSS2DObject));
-                    }
                 });
+
+                // Safely remove queued CSS2D objects out-of-band
+                css2dToRemove.forEach(({ parent, child }) => parent.remove(child));
+
             }, undefined, (e) => {
                 console.error("Failed to load", currentModel, e);
                 if (currentModel !== 'scene.glb') {
@@ -599,14 +630,8 @@
                     }, undefined, (e) => console.error(e));
                 }
             });
-            //debug in console after load
-            let c = 0, u = 0;
-            modelRoot.traverse(o => {
-            if (!o.isMesh) return;
-            if (isComponentObject(o)) { c++; console.log('COMP', o.name, o.material?.opacity, o.parent?.userData); }
-            else u++;
-            });
-            console.log({ components: c, unitsOrOther: u });    
+
+                
             createHoverLabel();
 
             setupListeners();
