@@ -208,6 +208,25 @@
             return null;
         }
 
+        // --- COMPONENTS (unit-like, non-unit objects from the web Cabinet Designer) ---
+        // Walls, windows, doors ... arrive under a root flagged is_component (name prefix ComponentRoot_ as fallback).
+        // They are display-only: keep the opacity stored in the GLB, never selectable, click-through.
+        // Blender-made files contain no such roots, so this whole block is a no-op for them.
+        function tagComponents(root) {
+            root.traverse(o => {
+                const isRoot = (o.userData && o.userData.is_component === true) ||
+                               (typeof o.name === 'string' && o.name.indexOf('ComponentRoot_') === 0);
+                if (isRoot) o.traverse(c => { c.userData = c.userData || {}; c.userData.isComponentPart = true; });
+            });
+        }
+        function isComponentObj(o) {
+            return !!(o && o.userData && o.userData.isComponentPart === true);
+        }
+        // raycast that ignores components, so clicks and hovers pass through walls to the units behind
+        function pickHits(raycaster) {
+            return raycaster.intersectObjects(scene.children, true).filter(h => !isComponentObj(h.object));
+        }
+
         // --- HOVER LABEL ---
         function createHoverLabel() {
             const div = document.createElement('div');
@@ -243,7 +262,7 @@
             const raycaster = new THREE.Raycaster();
             
             raycaster.setFromCamera(mouse, camera);
-            const hits = raycaster.intersectObjects(scene.children, true);
+            const hits = pickHits(raycaster);
 
             if (hits.length > 0) {
                 const obj = hits[0].object;
@@ -271,7 +290,7 @@
             const raycaster = new THREE.Raycaster();
             
             raycaster.setFromCamera(mouse, camera);
-            const hits = raycaster.intersectObjects(scene.children, true);
+            const hits = pickHits(raycaster);
             
             if (hits.length > 0) {
                 let obj = hits[0].object;
@@ -526,13 +545,14 @@
                 const model = gltf.scene;
                 modelRoot = model;
                 scene.add(model);
+                tagComponents(model);
                 linkVisualsToOwners(model);
 
                 // Add dimension labels
                 model.traverse((child) => {
                         
                     // Ensure rough kitchen materials handle light smoothly
-                    if(child.material) {
+                    if(child.material && !isComponentObj(child)) {
                         child.material.envMapIntensity = 1.0; 
                         // Ensure the material isn't completely flat white
                         if (child.material.color.getHex() === 0xffffff) {
@@ -573,6 +593,7 @@
                     new THREE.GLTFLoader().load('scene.glb', (gltf) => {
                         modelRoot = gltf.scene;
                         scene.add(modelRoot);
+                        tagComponents(modelRoot);
                         linkVisualsToOwners(modelRoot);
                     }, undefined, (e) => console.error(e));
                 }
@@ -732,7 +753,7 @@
             } else if (modelRoot) {
                 // GLOBAL OPACITY: Safe traversal pass across the complete scene tree structure
                 modelRoot.traverse(o => {
-                    if (o.isMesh && o.material) {
+                    if (o.isMesh && o.material && !isComponentObj(o)) {
                         const mats = getMats(o);
                         const newMats = mats.map(m => setMaterialOpacity(m, factor, true));
                         o.material = newMats.length === 1 ? newMats[0] : newMats;
@@ -937,7 +958,7 @@
             document.getElementById('opacity').value = 1;
             document.getElementById('opacityVal').textContent = 100;
             if (modelRoot) {
-                modelRoot.traverse(o => getMats(o).forEach(m => setMaterialOpacity(m, 1, false)));
+                modelRoot.traverse(o => { if (!isComponentObj(o)) getMats(o).forEach(m => setMaterialOpacity(m, 1, false)); });
             }
         }
 
@@ -1107,7 +1128,7 @@
             doorAnimations = []; 
 
             scene.traverse((obj) => {
-                if (obj.material) {
+                if (obj.material && !isComponentObj(obj)) {
                     obj.material.color.set(0xeeeeee);
                     obj.material.map = null;
                     obj.material.normalMap = null;
@@ -1125,7 +1146,7 @@
 
 
         function resetColors() {
-            scene.traverse(o => { if (o.material?.color) o.material.color.set(0xeeeeee); });
+            scene.traverse(o => { if (o.material?.color && !isComponentObj(o)) o.material.color.set(0xeeeeee); });
         }
 
         function resetAllLighting() {
