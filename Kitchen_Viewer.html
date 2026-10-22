@@ -77,7 +77,7 @@
     <button id="toggleUI" title="Toggle UI">👁</button>
 
     <div id="ui">
-        <h2 style="margin:0 0 8px 0;">🎨 KitchenTrends_2 <br>
+        <h2 style="margin:0 0 8px 0;">🎨 KitchenTrends_222 <br>
         Hein 📡 079 999 2215</h2>
         <small id="modelName" style="color:#aaa;">Loading model list...</small>
         
@@ -542,94 +542,91 @@
             document.getElementById('modelName').textContent = "📦 " + modelToLoad;
 
             new THREE.GLTFLoader().load(modelToLoad, (gltf) => {
-                const model = gltf.scene;
-                modelRoot = model;
-                scene.add(model);
-                linkVisualsToOwners(model);
+    const model = gltf.scene;
+    modelRoot = model;
 
-                // Keep track of materials we have already processed to prevent double-mutating shared materials
-                const processedMaterials = new Map();
-                // Keep track of CSS2D objects to safely remove after traversal
-                const css2dToRemove = [];
+    // 1. SET THE DETAIL WITHIN: Clean up materials & track structural definitions FIRST
+    const processedMaterials = new Map();
+    const css2dToRemove = [];
 
-                model.traverse((child) => {
-                    // Safe check for userData structural safety
-                    if (!child.userData) child.userData = {};
+    model.traverse((child) => {
+        if (!child.userData) child.userData = {};
 
-                    // Queue CSS2DObjects for safe post-traversal removal to avoid breaking the iterator
-                    if (child.userData.unit_label && !child.userData.is_unit && child.children) {
-                        child.children.forEach(c => {
-                            if (c instanceof THREE.CSS2DObject) css2dToRemove.push({ parent: child, child: c });
-                        });
-                    }
-
-                    if (!child.isMesh || !child.material) return;
-
-                    const isComp = isComponentObject(child);
-                    const srcMats = Array.isArray(child.material) ? child.material : [child.material];
-
-                    const outMats = srcMats.map(m => {
-                        if (!m) return m;
-
-                        // Policy: Components always clone to completely isolate mutations from units
-                        // Units only clone if they share an instance with a component or another unit to prevent global state leaks
-                        let mat = m;
-                        if (isComp) {
-                            mat = m.clone();
-                        } else if (processedMaterials.has(m) && processedMaterials.get(m).wasComp) {
-                            // If this material was already processed as a component material, a Unit cannot reuse it raw
-                            mat = m.clone();
-                        }
-
-                        // Track this material's context
-                        if (!processedMaterials.has(mat)) {
-                            processedMaterials.set(mat, { wasComp: isComp });
-
-                            // Common baseline configurations
-                            mat.envMapIntensity = 1.0;
-                            if (mat.color && typeof mat.color.getHex === 'function' && mat.color.getHex() === 0xffffff) {
-                                mat.color.setHex(0xf5f5f5);
-                            }
-                            mat.side = THREE.DoubleSide;
-                            if (!mat.userData) mat.userData = {};
-
-                            // Post-load material policy application
-                            if (isComp) {
-                                const op = (mat.opacity !== undefined && mat.opacity !== null) ? mat.opacity : 1;
-                                mat.opacity = op;
-                                mat.userData._componentLocked = true;
-                                mat.userData.baseOpacity = op;
-                                mat.userData.opacityFactor = 1;
-                                mat.transparent = op < 0.999;
-                                mat.depthWrite = op >= 0.999;
-                            } else {
-                                // Units -> Opaque, Slider-Ready baseline
-                                mat.transparent = false;
-                                mat.depthWrite = true;
-                            }
-                            mat.needsUpdate = true;
-                        }
-
-                        return mat;
-                    });
-
-                    // Reassign the clean array/material back to the child mesh
-                    child.material = outMats.length === 1 ? outMats[0] : outMats;
-                });
-
-                // Safely remove queued CSS2D objects out-of-band
-                css2dToRemove.forEach(({ parent, child }) => parent.remove(child));
-
-            }, undefined, (e) => {
-                console.error("Failed to load", currentModel, e);
-                if (currentModel !== 'scene.glb') {
-                    new THREE.GLTFLoader().load('scene.glb', (gltf) => {
-                        modelRoot = gltf.scene;
-                        scene.add(modelRoot);
-                        linkVisualsToOwners(modelRoot);
-                    }, undefined, (e) => console.error(e));
-                }
+        // Queue UI remnants for out-of-band deletion so we don't break traverse arrays
+        if (child.userData.unit_label && !child.userData.is_unit && child.children) {
+            child.children.forEach(c => {
+                if (c instanceof THREE.CSS2DObject) css2dToRemove.push({ parent: child, child: c });
             });
+        }
+
+        if (!child.isMesh || !child.material) return;
+
+        const isComp = isComponentObject(child);
+        const srcMats = Array.isArray(child.material) ? child.material : [child.material];
+
+        const outMats = srcMats.map(m => {
+            if (!m) return m;
+
+            // Enforce Material Isolation Policies
+            let mat = m;
+            if (isComp) {
+                mat = m.clone();
+            } else if (processedMaterials.has(m) && processedMaterials.get(m).wasComp) {
+                mat = m.clone(); // Separate a Unit's material if a Component tainted the shared instance
+            }
+
+            if (!processedMaterials.has(mat)) {
+                processedMaterials.set(mat, { wasComp: isComp });
+
+                // Apply granular rendering configurations
+                mat.envMapIntensity = 1.0;
+                if (mat.color && typeof mat.color.getHex === 'function' && mat.color.getHex() === 0xffffff) {
+                    mat.color.setHex(0xf5f5f5); // Shift absolute white to soft workspace tint
+                }
+                mat.side = THREE.DoubleSide;
+                if (!mat.userData) mat.userData = {};
+
+                if (isComp) {
+                    const op = (mat.opacity !== undefined && mat.opacity !== null) ? mat.opacity : 1;
+                    mat.opacity = op;
+                    mat.userData._componentLocked = true;
+                    mat.userData.baseOpacity = op;
+                    mat.userData.opacityFactor = 1;
+                    mat.transparent = op < 0.999;
+                    mat.depthWrite = op >= 0.999;
+                } else {
+                    mat.transparent = false;
+                    mat.depthWrite = true;
+                }
+                mat.needsUpdate = true;
+            }
+            return mat;
+        });
+
+        // Reassign correctly sized instances back onto the sub-meshes
+        child.material = outMats.length === 1 ? outMats[0] : outMats;
+    });
+
+    // 2. Clear out-of-band elements safely
+    css2dToRemove.forEach(({ parent, child: targetNode }) => parent.remove(targetNode));
+
+    // 3. Add to hierarchy now that meshes carry exact isolated states
+    scene.add(model);
+
+    // 4. Run relationship resolution now that structural markers are correctly set
+    linkVisualsToOwners(model);
+
+}, undefined, (e) => {
+    console.error("Failed to load", currentModel, e);
+    if (currentModel !== 'scene.glb') {
+        new THREE.GLTFLoader().load('scene.glb', (gltf) => {
+            modelRoot = gltf.scene;
+            scene.add(modelRoot);
+            linkVisualsToOwners(modelRoot);
+        }, undefined, (e) => console.error(e));
+    }
+});
+
 
                 
             createHoverLabel();
