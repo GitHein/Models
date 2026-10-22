@@ -813,6 +813,7 @@
             let moved = 0, orphans = 0;
             visuals.forEach(v => {
                 const owner = fronts.get(unitOf(v) + "|" + v.userData.owner_id);
+                console.log("owner=",owner);
                 if (!owner) { orphans++; return; }
                 if (v.parent !== owner) { owner.attach(v); moved++; }
             });
