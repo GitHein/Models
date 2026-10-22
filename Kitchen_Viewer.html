@@ -77,8 +77,8 @@
     <button id="toggleUI" title="Toggle UI">👁</button>
 
     <div id="ui">
-        <h2 style="margin:0 0 8px 0;">🎨 IdealKitchens <br>
-        Hein 📡 079 999 2215_1610_10</h2>
+        <h2 style="margin:0 0 8px 0;">🎨 KitchenTrends <br>
+        Hein 📡 079 999 2215</h2>
         <small id="modelName" style="color:#aaa;">Loading model list...</small>
         
         <div class="section">
@@ -197,6 +197,20 @@
         let camTween = null;
 
         // --- UNIT ROOT FINDER ---
+        //function findUnitRoot(obj) {
+        //    let current = obj;
+        //    while (current) {
+        //        if (current.userData && current.userData.is_unit === true) {
+        //            return current;
+        //        }
+        //        current = current.parent;
+        //    }
+        //    return null;
+        //}
+
+        // --- UNIT / COMPONENT ROOT FINDERS ---
+        // Units: is_unit === true (React export + Blender unit roots)
+        // Components: componentId / kind present, never is_unit (walls, windows, floors...)
         function findUnitRoot(obj) {
             let current = obj;
             while (current) {
@@ -206,6 +220,22 @@
                 current = current.parent;
             }
             return null;
+        }
+
+        function findComponentRoot(obj) {
+            let current = obj;
+            while (current) {
+                const u = current.userData;
+                if (u && (u.componentId || (u.kind && !u.is_unit))) return current;
+                current = current.parent;
+            }
+            return null;
+        }
+
+        function isComponentObject(obj) {
+            if (!obj) return false;
+            if (findUnitRoot(obj)) return false;   // unit wins if both somehow tagged
+            return findComponentRoot(obj) !== null;
         }
 
         // --- HOVER LABEL ---
@@ -528,43 +558,41 @@
                 scene.add(model);
                 linkVisualsToOwners(model);
 
-                // Add dimension labels
+                // Post-load: units get opaque defaults; components keep exported opacity and stay off the slider
                 model.traverse((child) => {
-                        
-                    // Ensure rough kitchen materials handle light smoothly
-                    if(child.material) {
-                        child.material.envMapIntensity = 1.0; 
-                        // Ensure the material isn't completely flat white
-                        if (child.material.color.getHex() === 0xffffff) {
-                            child.material.color.setHex(0xf5f5f5); // Soft off-white shows details better than pure blinding white
-                        }
+                    if (!child.isMesh || !child.material) return;
 
-                        //1510_00
-                        // === ACTIVATE TRANSPARENCY HOOKS IMMEDIATELY ===
-                        // This allows initial sliders to react without applying a custom texture first
-                        child.material.transparent = false; 
-                        child.material.depthWrite = true;
-                        // Render both sides of the wood panels so backing walls don't vanish from wide viewing angles
-                        child.material.side = THREE.DoubleSide;
-                        //1510_00
+                    const mats = Array.isArray(child.material) ? child.material : [child.material];
+                    const isComp = isComponentObject(child);
 
-                        if (child.userData && child.userData.unit_label && !child.userData.is_unit) {
-                            // Remove old empty-based labels
-                            child.remove(...child.children.filter(c => c instanceof THREE.CSS2DObject));
+                    mats.forEach(m => {
+                        if (!m) return;
+                        m.envMapIntensity = 1.0;
+                        if (m.color && m.color.getHex && m.color.getHex() === 0xffffff) {
+                            m.color.setHex(0xf5f5f5);
                         }
+                        m.side = THREE.DoubleSide;
+
+                        if (isComp) {
+                            // Lock exported opacity: slider must never rewrite these
+                            const op = (m.opacity !== undefined && m.opacity !== null) ? m.opacity : 1;
+                            m.userData = m.userData || {};
+                            m.userData._componentLocked = true;
+                            m.userData.baseOpacity = op;
+                            m.userData.opacityFactor = 1;
+                            m.transparent = op < 0.999;
+                            m.depthWrite = op >= 0.999;
+                            m.needsUpdate = true;
+                        } else {
+                            // Units / carcass: ready for the opacity slider (start fully opaque)
+                            m.transparent = false;
+                            m.depthWrite = true;
+                        }
+                    });
+
+                    if (child.userData && child.userData.unit_label && !child.userData.is_unit) {
+                        child.remove(...child.children.filter(c => c instanceof THREE.CSS2DObject));
                     }
-
-                    //if (child.userData && child.userData.unit_label) {
-                    //    const div = document.createElement('div');
-                    //    div.className = 'dimension-label';
-                        
-                    //    // FOUR backslashes are required here so Python outputs exactly TWO to the HTML file
-                    //    div.textContent = child.userData.unit_label.replace(/\\n/g, '\n');
-
-                    //    const label = new THREE.CSS2DObject(div);
-                    //    label.position.set(0, 0.1, 0);   // slightly above the empty
-                    //    child.add(label);
-                    //}
                 });
             }, undefined, (e) => {
                 console.error("Failed to load", currentModel, e);
@@ -574,6 +602,29 @@
                         modelRoot = gltf.scene;
                         scene.add(modelRoot);
                         linkVisualsToOwners(modelRoot);
+                        // Same unit/component opacity policy as primary load
+                        modelRoot.traverse((child) => {
+                            if (!child.isMesh || !child.material) return;
+                            const mats = Array.isArray(child.material) ? child.material : [child.material];
+                            const isComp = isComponentObject(child);
+                            mats.forEach(m => {
+                                if (!m) return;
+                                m.side = THREE.DoubleSide;
+                                if (isComp) {
+                                    const op = (m.opacity !== undefined && m.opacity !== null) ? m.opacity : 1;
+                                    m.userData = m.userData || {};
+                                    m.userData._componentLocked = true;
+                                    m.userData.baseOpacity = op;
+                                    m.userData.opacityFactor = 1;
+                                    m.transparent = op < 0.999;
+                                    m.depthWrite = op >= 0.999;
+                                    m.needsUpdate = true;
+                                } else {
+                                    m.transparent = false;
+                                    m.depthWrite = true;
+                                }
+                            });
+                        });
                     }, undefined, (e) => console.error(e));
                 }
             });
@@ -647,37 +698,10 @@
                 : 1;
         }
 
-        function setMaterialOpacity_old(mat, factor, forceClone = false) {
-            if (!mat) return;
-
-            // Clone if we are operating on a single selected object
-            // (avoids mutating shared materials that belong to other cabinets)
-            if (forceClone && !mat.userData._opacityCloned) {
-                mat = mat.clone();
-                mat.userData._opacityCloned = true;
-                // caller must re-assign the cloned material – see updateOpacity
-                return mat;
-            }
-
-            if (mat.userData.baseOpacity === undefined) {
-                mat.userData.baseOpacity = mat.opacity ?? 1;
-                mat.userData.baseTransparent = mat.transparent ?? false;
-            }
-
-            mat.userData.opacityFactor = factor;
-            mat.opacity = mat.userData.baseOpacity * factor;
-
-            // Keep depthWrite ON – this eliminates most of the sudden “vanish” artefacts
-            // on dense cabinet geometry.  transparent is still required for opacity < 1.
-            mat.transparent = factor < 0.999;
-            mat.depthWrite  = true;               // ← critical change
-            mat.needsUpdate = true;
-
-            return mat;
-        }
-
         function setMaterialOpacity(mat, factor, forceClone = false) {
             if (!mat) return null;
+            // Component materials are locked at load to their GLB opacity — never rewrite them
+            if (mat.userData && mat.userData._componentLocked) return mat;
 
             let targetMat = mat;
             if (forceClone && !targetMat.userData._opacityCloned) {
@@ -693,7 +717,6 @@
             targetMat.userData.opacityFactor = factor;
             targetMat.opacity = targetMat.userData.baseOpacity * factor;
             
-            // Set rendering states explicitly to handle internal depth sort layers safely
             targetMat.transparent = factor < 0.999;
             targetMat.depthWrite = true; 
             targetMat.side = THREE.DoubleSide; 
@@ -709,30 +732,29 @@
 
             const selectedOnly = document.getElementById('opacitySelectedOnly').checked;
 
+            // Components (walls, windows, ...) keep export-time opacity — never touch them
             if (selectedOnly) {
-                if (!selectedMesh) return;
+                if (!selectedMesh || isComponentObject(selectedMesh)) return;
                 
                 const isFaceType = isFaceMesh(selectedMesh);
 
                 if (isFaceType && modelRoot) {
-                    // LINKED FACES BEHAVIOUR: Process all dynamic front panels inside the scene together
                     modelRoot.traverse(o => {
-                        if (o.isMesh && o.material && isFaceMesh(o)) {
+                        if (o.isMesh && o.material && isFaceMesh(o) && !isComponentObject(o)) {
                             const mats = getMats(o);
                             const newMats = mats.map(m => setMaterialOpacity(m, factor, true));
                             o.material = newMats.length === 1 ? newMats[0] : newMats;
                         }
                     });
                 } else {
-                    // CARCASS BEHAVIOUR: Isolate updates to the singular cabinet slab part targeted
                     const mats = getMats(selectedMesh);
                     const newMats = mats.map(m => setMaterialOpacity(m, factor, true));
                     selectedMesh.material = newMats.length === 1 ? newMats[0] : newMats;
                 }
             } else if (modelRoot) {
-                // GLOBAL OPACITY: Safe traversal pass across the complete scene tree structure
+                // GLOBAL OPACITY: units only — skip every mesh under a component root
                 modelRoot.traverse(o => {
-                    if (o.isMesh && o.material) {
+                    if (o.isMesh && o.material && !isComponentObject(o)) {
                         const mats = getMats(o);
                         const newMats = mats.map(m => setMaterialOpacity(m, factor, true));
                         o.material = newMats.length === 1 ? newMats[0] : newMats;
@@ -792,7 +814,6 @@
             let moved = 0, orphans = 0;
             visuals.forEach(v => {
                 const owner = fronts.get(unitOf(v) + "|" + v.userData.owner_id);
-                console.log("owner=",owner);
                 if (!owner) { orphans++; return; }
                 if (v.parent !== owner) { owner.attach(v); moved++; }
             });
@@ -938,7 +959,12 @@
             document.getElementById('opacity').value = 1;
             document.getElementById('opacityVal').textContent = 100;
             if (modelRoot) {
-                modelRoot.traverse(o => getMats(o).forEach(m => setMaterialOpacity(m, 1, false)));
+                // Reset units only; leave component materials at their locked export opacity
+                modelRoot.traverse(o => {
+                    if (o.isMesh && o.material && !isComponentObject(o)) {
+                        getMats(o).forEach(m => setMaterialOpacity(m, 1, false));
+                    }
+                });
             }
         }
 
