@@ -77,7 +77,7 @@
     <button id="toggleUI" title="Toggle UI">👁</button>
 
     <div id="ui">
-        <h2 style="margin:0 0 8px 0;">🎨 KitchenTrends <br>
+        <h2 style="margin:0 0 8px 0;">🎨 KitchenTrends_1 <br>
         Hein 📡 079 999 2215</h2>
         <small id="modelName" style="color:#aaa;">Loading model list...</small>
         
@@ -196,21 +196,9 @@
         let modelRoot = null;   // loaded GLB scene (used for opacity + view fitting)
         let camTween = null;
 
-        // --- UNIT ROOT FINDER ---
-        //function findUnitRoot(obj) {
-        //    let current = obj;
-        //    while (current) {
-        //        if (current.userData && current.userData.is_unit === true) {
-        //            return current;
-        //        }
-        //        current = current.parent;
-        //    }
-        //    return null;
-        //}
-
-        // --- UNIT / COMPONENT ROOT FINDERS ---
-        // Units: is_unit === true (React export + Blender unit roots)
-        // Components: componentId / kind present, never is_unit (walls, windows, floors...)
+                // --- UNIT / COMPONENT ROOT FINDERS ---
+        // Units: is_unit === true
+        // Components: componentId on the root (React export); never is_unit
         function findUnitRoot(obj) {
             let current = obj;
             while (current) {
@@ -226,7 +214,8 @@
             let current = obj;
             while (current) {
                 const u = current.userData;
-                if (u && (u.componentId || (u.kind && !u.is_unit))) return current;
+                // Prefer explicit componentId (React export). Avoid bare "kind" — too easy to false-positive.
+                if (u && u.componentId && !u.is_unit) return current;
                 current = current.parent;
             }
             return null;
@@ -234,7 +223,7 @@
 
         function isComponentObject(obj) {
             if (!obj) return false;
-            if (findUnitRoot(obj)) return false;   // unit wins if both somehow tagged
+            if (findUnitRoot(obj)) return false;
             return findComponentRoot(obj) !== null;
         }
 
@@ -552,43 +541,49 @@
             const modelToLoad = currentModel || 'scene.glb';
             document.getElementById('modelName').textContent = "📦 " + modelToLoad;
 
-            new THREE.GLTFLoader().load(modelToLoad, (gltf) => {
+                        new THREE.GLTFLoader().load(modelToLoad, (gltf) => {
                 const model = gltf.scene;
                 modelRoot = model;
                 scene.add(model);
                 linkVisualsToOwners(model);
 
-                // Post-load: units get opaque defaults; components keep exported opacity and stay off the slider
+                // Post-load material policy:
+                //   components → keep GLB opacity, clone mats so units never share them, lock vs slider
+                //   units      → opaque, slider-ready
                 model.traverse((child) => {
                     if (!child.isMesh || !child.material) return;
 
-                    const mats = Array.isArray(child.material) ? child.material : [child.material];
                     const isComp = isComponentObject(child);
+                    const srcMats = Array.isArray(child.material) ? child.material : [child.material];
 
-                    mats.forEach(m => {
-                        if (!m) return;
-                        m.envMapIntensity = 1.0;
-                        if (m.color && m.color.getHex && m.color.getHex() === 0xffffff) {
-                            m.color.setHex(0xf5f5f5);
+                    const outMats = srcMats.map(m => {
+                        if (!m) return m;
+                        // Always clone for components so we never mutate a material instance shared with a unit
+                        const mat = isComp ? m.clone() : m;
+                        mat.envMapIntensity = 1.0;
+                        if (mat.color && mat.color.getHex && mat.color.getHex() === 0xffffff) {
+                            mat.color.setHex(0xf5f5f5);
                         }
-                        m.side = THREE.DoubleSide;
+                        mat.side = THREE.DoubleSide;
+                        mat.userData = mat.userData || {};
 
                         if (isComp) {
-                            // Lock exported opacity: slider must never rewrite these
                             const op = (m.opacity !== undefined && m.opacity !== null) ? m.opacity : 1;
-                            m.userData = m.userData || {};
-                            m.userData._componentLocked = true;
-                            m.userData.baseOpacity = op;
-                            m.userData.opacityFactor = 1;
-                            m.transparent = op < 0.999;
-                            m.depthWrite = op >= 0.999;
-                            m.needsUpdate = true;
+                            mat.opacity = op;
+                            mat.userData._componentLocked = true;
+                            mat.userData.baseOpacity = op;
+                            mat.userData.opacityFactor = 1;
+                            mat.transparent = op < 0.999;
+                            mat.depthWrite = op >= 0.999;
                         } else {
-                            // Units / carcass: ready for the opacity slider (start fully opaque)
-                            m.transparent = false;
-                            m.depthWrite = true;
+                            mat.transparent = false;
+                            mat.depthWrite = true;
                         }
+                        mat.needsUpdate = true;
+                        return mat;
                     });
+
+                    child.material = outMats.length === 1 ? outMats[0] : outMats;
 
                     if (child.userData && child.userData.unit_label && !child.userData.is_unit) {
                         child.remove(...child.children.filter(c => c instanceof THREE.CSS2DObject));
@@ -596,35 +591,11 @@
                 });
             }, undefined, (e) => {
                 console.error("Failed to load", currentModel, e);
-                // Optional fallback
                 if (currentModel !== 'scene.glb') {
                     new THREE.GLTFLoader().load('scene.glb', (gltf) => {
                         modelRoot = gltf.scene;
                         scene.add(modelRoot);
                         linkVisualsToOwners(modelRoot);
-                        // Same unit/component opacity policy as primary load
-                        modelRoot.traverse((child) => {
-                            if (!child.isMesh || !child.material) return;
-                            const mats = Array.isArray(child.material) ? child.material : [child.material];
-                            const isComp = isComponentObject(child);
-                            mats.forEach(m => {
-                                if (!m) return;
-                                m.side = THREE.DoubleSide;
-                                if (isComp) {
-                                    const op = (m.opacity !== undefined && m.opacity !== null) ? m.opacity : 1;
-                                    m.userData = m.userData || {};
-                                    m.userData._componentLocked = true;
-                                    m.userData.baseOpacity = op;
-                                    m.userData.opacityFactor = 1;
-                                    m.transparent = op < 0.999;
-                                    m.depthWrite = op >= 0.999;
-                                    m.needsUpdate = true;
-                                } else {
-                                    m.transparent = false;
-                                    m.depthWrite = true;
-                                }
-                            });
-                        });
                     }, undefined, (e) => console.error(e));
                 }
             });
@@ -698,9 +669,9 @@
                 : 1;
         }
 
-        function setMaterialOpacity(mat, factor, forceClone = false) {
+                function setMaterialOpacity(mat, factor, forceClone = false) {
             if (!mat) return null;
-            // Component materials are locked at load to their GLB opacity — never rewrite them
+            // Locked at load for component meshes — never rewrite
             if (mat.userData && mat.userData._componentLocked) return mat;
 
             let targetMat = mat;
@@ -726,13 +697,13 @@
         }
 
 
-        function updateOpacity() {
+                function updateOpacity() {
             const factor = parseFloat(document.getElementById('opacity').value);
             document.getElementById('opacityVal').textContent = Math.round(factor * 100);
 
             const selectedOnly = document.getElementById('opacitySelectedOnly').checked;
 
-            // Components (walls, windows, ...) keep export-time opacity — never touch them
+            // Components keep export-time opacity — excluded from the slider entirely
             if (selectedOnly) {
                 if (!selectedMesh || isComponentObject(selectedMesh)) return;
                 
@@ -752,7 +723,6 @@
                     selectedMesh.material = newMats.length === 1 ? newMats[0] : newMats;
                 }
             } else if (modelRoot) {
-                // GLOBAL OPACITY: units only — skip every mesh under a component root
                 modelRoot.traverse(o => {
                     if (o.isMesh && o.material && !isComponentObject(o)) {
                         const mats = getMats(o);
@@ -781,11 +751,12 @@
             });
         }
 
-        // role-aware helpers: stiles (role "visual") are never doors/drawers themselves
+                // Accept both React/Blender tag styles: panel_type, Panel, panelType
         function panelKind(o) {
             const u = o && o.userData;
             if (!u || u.role === "visual") return null;
-            if (u.panel_type === "Door" || u.panel_type === "Drawer") return u.panel_type;
+            const t = u.panel_type || u.Panel || u.panelType;
+            if (t === "Door" || t === "Drawer") return t;
             return null;
         }
 
@@ -955,11 +926,10 @@
             document.getElementById('opacityVal').textContent = Math.round(f * 100);
         }
 
-        function resetOpacity() {
+                function resetOpacity() {
             document.getElementById('opacity').value = 1;
             document.getElementById('opacityVal').textContent = 100;
             if (modelRoot) {
-                // Reset units only; leave component materials at their locked export opacity
                 modelRoot.traverse(o => {
                     if (o.isMesh && o.material && !isComponentObject(o)) {
                         getMats(o).forEach(m => setMaterialOpacity(m, 1, false));
