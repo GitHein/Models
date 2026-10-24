@@ -208,6 +208,47 @@
             return null;
         }
 
+        let envTex = null;
+
+        // small "studio room" with a few bright panels, baked to a PMREM texture
+        function buildEnvironment() {
+            const env = new THREE.Scene();
+            env.add(new THREE.Mesh(
+                new THREE.BoxGeometry(10, 6, 10),
+                new THREE.MeshBasicMaterial({ color: 0x8a949e, side: THREE.BackSide })
+            ));
+            const panel = (w, h, x, y, z, rx, ry, k) => {
+                const m = new THREE.Mesh(
+                    new THREE.PlaneGeometry(w, h),
+                    new THREE.MeshBasicMaterial({ color: new THREE.Color(k, k, k), side: THREE.DoubleSide })
+                );
+                m.position.set(x, y, z);
+                m.rotation.set(rx, ry, 0);
+                env.add(m);
+            };
+            panel(4, 4, 0, 2.9, 0, Math.PI / 2, 0, 6);        // ceiling light
+            panel(3, 2, -4.9, 1.5, 0, 0, Math.PI / 2, 3);     // left window
+            panel(3, 2,  4.9, 1.5, 0, 0, Math.PI / 2, 3);     // right window
+            panel(4, 2, 0, 1.5, 4.9, 0, 0, 2);                // front fill
+            const pm = new THREE.PMREMGenerator(renderer);
+            envTex = pm.fromScene(env, 0.04).texture;
+            pm.dispose();
+        }
+
+        // components only: units keep their current look
+        function applyComponentEnv(root) {
+            root.traverse(o => {
+                if (!o.isMesh || !isComponentObj(o)) return;
+                getMats(o).forEach(m => {
+                    if (m.isMeshStandardMaterial) {
+                        m.envMap = envTex;
+                        m.envMapIntensity = 1.0;
+                        m.needsUpdate = true;
+                    }
+                });
+            });
+        }
+
         // --- COMPONENTS (unit-like, non-unit objects from the web Cabinet Designer) ---
         // Walls, windows, doors ... arrive under a root flagged is_component (name prefix ComponentRoot_ as fallback).
         // They are display-only: keep the opacity stored in the GLB, never selectable, click-through.
@@ -537,6 +578,8 @@
 
             createHoverLabel();
 
+            buildEnvironment();
+
             // Load GLB - use URL parameter or default
             const modelToLoad = currentModel || 'scene.glb';
             document.getElementById('modelName').textContent = "📦 " + modelToLoad;
@@ -546,6 +589,7 @@
                 modelRoot = model;
                 scene.add(model);
                 tagComponents(model);
+                applyComponentEnv(model); 
                 linkVisualsToOwners(model);
 
                 // Add dimension labels
@@ -587,6 +631,7 @@
                         modelRoot = gltf.scene;
                         scene.add(modelRoot);
                         tagComponents(modelRoot);
+                        applyComponentEnv(modelRoot);
                         linkVisualsToOwners(modelRoot);
                     }, undefined, (e) => console.error(e));
                 }
