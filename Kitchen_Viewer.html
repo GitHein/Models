@@ -550,41 +550,34 @@
 
                 // Add dimension labels
                 model.traverse((child) => {
+                    // 💡 FIX: Check if this mesh or any parent carries component identification
+                    const isCustomComponent = child.userData && (
+                        child.userData.is_component === true || 
+                        child.userData.isComponentPart === true
+                    );
                         
-                    // Ensure rough kitchen materials handle light smoothly
-                    if(child.material && !isComponentObj(child)) {
-                        child.material.envMapIntensity = 1.0; 
-                        // Ensure the material isn't completely flat white
-                        if (child.material.color.getHex() === 0xffffff) {
-                            child.material.color.setHex(0xf5f5f5); // Soft off-white shows details better than pure blinding white
+                    if (child.material) {
+                        if (!isCustomComponent) {
+                            // Apply standard universal kitchen cabinet panel baseline overrides
+                            child.material.envMapIntensity = 1.0; 
+                            if (child.material.color.getHex() === 0xffffff) {
+                                child.material.color.setHex(0xf5f5f5);
+                            }
+                            child.material.transparent = false; 
+                            child.material.depthWrite = true;
+                            child.material.side = THREE.DoubleSide;
+                        } else {
+                            // 💡 COMPONENT FIX: Preserve embedded custom materials completely!
+                            child.material.transparent = child.material.opacity < 0.999;
+                            child.material.depthWrite = true;
+                            child.material.side = THREE.DoubleSide;
+                            child.material.needsUpdate = true;
                         }
 
-                        //1510_00
-                        // === ACTIVATE TRANSPARENCY HOOKS IMMEDIATELY ===
-                        // This allows initial sliders to react without applying a custom texture first
-                        child.material.transparent = false; 
-                        child.material.depthWrite = true;
-                        // Render both sides of the wood panels so backing walls don't vanish from wide viewing angles
-                        child.material.side = THREE.DoubleSide;
-                        //1510_00
-
                         if (child.userData && child.userData.unit_label && !child.userData.is_unit) {
-                            // Remove old empty-based labels
                             child.remove(...child.children.filter(c => c instanceof THREE.CSS2DObject));
                         }
                     }
-
-                    //if (child.userData && child.userData.unit_label) {
-                    //    const div = document.createElement('div');
-                    //    div.className = 'dimension-label';
-                        
-                    //    // FOUR backslashes are required here so Python outputs exactly TWO to the HTML file
-                    //    div.textContent = child.userData.unit_label.replace(/\\n/g, '\n');
-
-                    //    const label = new THREE.CSS2DObject(div);
-                    //    label.position.set(0, 0.1, 0);   // slightly above the empty
-                    //    child.add(label);
-                    //}
                 });
             }, undefined, (e) => {
                 console.error("Failed to load", currentModel, e);
