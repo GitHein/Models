@@ -78,7 +78,7 @@
 
     <div id="ui">
         <h2 style="margin:0 0 8px 0;">🎨 KitchenTrends <br>
-        Hein 📡 079 999 2215</h2>
+        Hein 📡 079 999 2215_1</h2>
         <small id="modelName" style="color:#aaa;">Loading model list...</small>
         
         <div class="section">
@@ -185,6 +185,7 @@
     <script>
         
         let scene, camera, renderer, controls, selectedMesh, hemiLight, dirLight, labelRenderer;
+        let envTex = null;
         let currentModel = new URLSearchParams(window.location.search).get('model') || 'scene.glb';
         let uiVisible = true;
         let hinges = new Map(); // 1510_08 Tracks virtual hinges assigned to unique door mesh components
@@ -208,9 +209,22 @@
             return null;
         }
 
-        let envTex = null;
+        // --- COMPONENTS (unit-like, non-unit objects from the web Cabinet Designer) ---
+        // Walls, windows, doors ... arrive under a root flagged is_component (name prefix ComponentRoot_ as fallback).
+        // They are display-only: keep the opacity stored in the GLB, never selectable, click-through.
+        // Blender-made files contain no such roots, so this whole block is a no-op for them.
+        function tagComponents(root) {
+            root.traverse(o => {
+                const isRoot = (o.userData && o.userData.is_component === true) ||
+                               (typeof o.name === 'string' && o.name.indexOf('ComponentRoot_') === 0);
+                if (isRoot) o.traverse(c => { c.userData = c.userData || {}; c.userData.isComponentPart = true; });
+            });
+        }
+        function isComponentObj(o) {
+            return !!(o && o.userData && o.userData.isComponentPart === true);
+        }
 
-        // small "studio room" with a few bright panels, baked to a PMREM texture
+        // Small studio room with bright panels, baked to a PMREM environment texture.
         function buildEnvironment() {
             const env = new THREE.Scene();
             env.add(new THREE.Mesh(
@@ -226,16 +240,16 @@
                 m.rotation.set(rx, ry, 0);
                 env.add(m);
             };
-            panel(4, 4, 0, 2.9, 0, Math.PI / 2, 0, 6);        // ceiling light
-            panel(3, 2, -4.9, 1.5, 0, 0, Math.PI / 2, 3);     // left window
-            panel(3, 2,  4.9, 1.5, 0, 0, Math.PI / 2, 3);     // right window
-            panel(4, 2, 0, 1.5, 4.9, 0, 0, 2);                // front fill
+            panel(4, 4, 0, 2.9, 0, Math.PI / 2, 0, 6);       // ceiling light
+            panel(3, 2, -4.9, 1.5, 0, 0, Math.PI / 2, 3);    // left window
+            panel(3, 2,  4.9, 1.5, 0, 0, Math.PI / 2, 3);    // right window
+            panel(4, 2, 0, 1.5, 4.9, 0, 0, 2);               // front fill
             const pm = new THREE.PMREMGenerator(renderer);
             envTex = pm.fromScene(env, 0.04).texture;
             pm.dispose();
         }
 
-        // components only: units keep their current look
+        // Apply studio reflections to component meshes only; cabinet units retain their look.
         function applyComponentEnv(root) {
             root.traverse(o => {
                 if (!o.isMesh || !isComponentObj(o)) return;
@@ -247,21 +261,6 @@
                     }
                 });
             });
-        }
-
-        // --- COMPONENTS (unit-like, non-unit objects from the web Cabinet Designer) ---
-        // Walls, windows, doors ... arrive under a root flagged is_component (name prefix ComponentRoot_ as fallback).
-        // They are display-only: keep the opacity stored in the GLB, never selectable, click-through.
-        // Blender-made files contain no such roots, so this whole block is a no-op for them.
-        function tagComponents(root) {
-            root.traverse(o => {
-                const isRoot = (o.userData && o.userData.is_component === true) ||
-                               (typeof o.name === 'string' && o.name.indexOf('ComponentRoot_') === 0);
-                if (isRoot) o.traverse(c => { c.userData = c.userData || {}; c.userData.isComponentPart = true; });
-            });
-        }
-        function isComponentObj(o) {
-            return !!(o && o.userData && o.userData.isComponentPart === true);
         }
         // raycast that ignores components, so clicks and hovers pass through walls to the units behind
         function pickHits(raycaster) {
@@ -550,6 +549,7 @@
             camera.position.set(5, 3, 7);
 
             renderer = new THREE.WebGLRenderer({ antialias: true });
+            buildEnvironment();
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.shadowMap.enabled = true;
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -578,8 +578,6 @@
 
             createHoverLabel();
 
-            buildEnvironment();
-
             // Load GLB - use URL parameter or default
             const modelToLoad = currentModel || 'scene.glb';
             document.getElementById('modelName').textContent = "📦 " + modelToLoad;
@@ -589,7 +587,7 @@
                 modelRoot = model;
                 scene.add(model);
                 tagComponents(model);
-                applyComponentEnv(model); 
+                applyComponentEnv(model);
                 linkVisualsToOwners(model);
 
                 // Add dimension labels
