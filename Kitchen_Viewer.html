@@ -35,11 +35,20 @@
         .section { margin: 12px 0; padding: 10px; background: rgba(255,255,255,0.07); border-radius: 8px; }
         label { display:block; margin: 6px 0 3px; font-size: 13px; }
         input[type="range"], select, button { width:100%; padding:9px; margin:4px 0; font-size:14px; border-radius:6px; }
-        .texture-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
-        .texture-btn { 
-            width: 100%; aspect-ratio: 1; background-size: cover; background-position: center; 
-            border: 2px solid #555; border-radius: 4px; cursor: pointer;
+        .texture-grid {
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px;
+            max-height: 230px; overflow-y: auto; padding: 2px;
         }
+        .tex-item { cursor: pointer; text-align: center; font-size: 10px; color: #bbb; line-height: 1.2; }
+        .tex-item img {
+            display: block; width: 100%; aspect-ratio: 1; object-fit: cover;
+            border: 2px solid #555; border-radius: 4px; background: #222;
+        }
+        .tex-item:hover img { border-color: #999; }
+        .tex-item.active img { border-color: #0f0; }
+        .tex-item span { display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .tex-head { display: flex; justify-content: space-between; align-items: baseline; margin-top: 8px; }
+        .tex-head button { width: auto; padding: 2px 8px; margin: 0; font-size: 11px; }
         .model-option { padding: 8px; background: rgba(255,255,255,0.05); margin: 4px 0; border-radius: 6px; cursor: pointer; }
         .model-option:hover { background: rgba(255,255,255,0.15); }
         .model-option.selected { background: #0a0; border: 1px solid #0f0; }
@@ -84,7 +93,7 @@
 
     <div id="ui">
         <h2 style="margin:0 0 8px 0;">🎨 KitchenTrends <br>
-        Hein 📡 079 999 2215</h2>
+        Hein 📡 079 999 2215_1</h2>
         <small id="modelName" style="color:#aaa;">Loading model list...</small>
         
         <div class="section">
@@ -102,8 +111,20 @@
         </div>
 
         <div class="section">
-            <h3>Textures + Normal Maps</h3>
-            <div class="texture-grid" id="textureGrid"></div>
+            <h3 style="margin:0 0 4px 0;">Textures</h3>
+            <small style="color:#aaa;">Melamine goes on all faces (doors, drawers, stiles, exposed). Quartz goes on all tops.</small>
+
+            <div class="tex-head"><strong>Melamine</strong><button id="texClearFaces" title="Back to the file's face colour">None</button></div>
+            <div class="texture-grid" id="melamineGrid"></div>
+            <label>Grain size <span id="texSizeFacesVal">0.80</span> m</label>
+            <input type="range" id="texSizeFaces" min="0.2" max="3" step="0.05" value="0.8">
+
+            <div class="tex-head"><strong>Quartz</strong><button id="texClearTops" title="Back to the file's top colour">None</button></div>
+            <div class="texture-grid" id="quartzGrid"></div>
+            <label>Pattern size <span id="texSizeTopsVal">0.60</span> m</label>
+            <input type="range" id="texSizeTops" min="0.2" max="3" step="0.05" value="0.6">
+
+            <small id="texStatus" style="display:block; color:#aaa; margin-top:4px;"></small>
         </div>
 
         <div class="section">
@@ -360,7 +381,18 @@
                     ownMaterials(o);
                     getMats(o).forEach(mm => { mm.depthWrite = !mm.transparent; mm.needsUpdate = true; });
                 }
+                // pristine copy of the file's material: the resets go back to exactly this
+                o.userData._fileMat = getMats(o).map(mm => mm.clone());
             });
+        }
+
+        // Put a mesh back on the file's material. keepFactor: re-apply the group's current opacity (Reset Colors).
+        function restoreFileMaterial(o, keepFactor) {
+            if (!o.userData._fileMat) return;
+            const mats = o.userData._fileMat.map(m => m.clone());
+            if (keepFactor !== undefined && keepFactor < 0.999) mats.forEach(m => setMaterialOpacity(m, keepFactor, false));
+            o.material = mats.length === 1 ? mats[0] : mats;
+            o.userData._ownMat = true;
         }
 
         // --- HOVER LABEL ---
@@ -469,7 +501,6 @@
         }
 
 
-        let currentTextureMap = {};
 
         document.getElementById('modelName').textContent = "📦 " + currentModel;
 
@@ -555,81 +586,198 @@
             loadModelsJSON();
         }
 
-        // Sample Textures (you can add more URLs here)
-        const textures = [
-            {name: "Treviso", diff: "assets/Treviso.jpg", normal: "assets/Treviso.jpg"},
-            {name: "Folkstone Grey",    diff: "assets/Folkstone_Grey.jpg",     normal: "assets/Folkstone_Grey.jpg"},
-            {name: "Caraz", diff: "assets/Caraz.jpg",   normal: "assets/Caraz.jpg"},
-            {name: "Bronze River",    diff: "assets/Bronze_River.jpg",     normal: "assets/Bronze_River.jpg"},
-        ];
+        // ---------------- TEXTURES (melamine -> faces, quartz -> tops) ----------------
+        // The picker lists the images in assets/melamine and assets/quartz (next to this page):
+        //   1. assets/textures.json if it exists:
+        //        { "melamine": ["F2278.jpg", {"file": "Cannero-M-Revit.jpg", "name": "Cannero", "size": 0.9}], "quartz": [...] }
+        //      ("size" = metres one image width covers; optional)
+        //   2. otherwise, on GitHub Pages, the GitHub API folder listing (just drop jpg/png files in the folders)
+        // Textures are laid on in real-world metres (box-projected UVs), so grain is the same scale on every panel and
+        // runs vertically on doors, drawers and side panels.
+        const TEX_DIRS = { faces: 'assets/melamine', tops: 'assets/quartz' };
+        const TEX_GRID = { faces: 'melamineGrid', tops: 'quartzGrid' };
+        const TEX_SIZE_DEFAULT = { faces: 0.8, tops: 0.6 };
+        const texState = {
+            faces: { url: null, tex: null, size: 0.8, aspect: 1 },
+            tops:  { url: null, tex: null, size: 0.6, aspect: 1 }
+        };
+        const texCache = new Map();
 
+        const prettyTexName = (file) => file
+            .replace(/\.[^.]+$/, '')
+            .replace(/[-_ ]*(S?M|SG)?[-_ ]*Revit$/i, '')
+            .replace(/[-_]+/g, ' ')
+            .trim();
 
-        function createTextureButtons() {
-            const grid = document.getElementById('textureGrid');
-            textures.forEach(tex => {
-                const btn = document.createElement('div');
-                btn.className = 'texture-btn';
-                //btn.style.backgroundImage = `url(${tex.url})`;
-                btn.style.backgroundImage = `url(${tex.diff})`;
-                btn.title = tex.name;
-                //btn.onclick = () => applyTexture(tex.url);
-                btn.onclick = () => applyPBRMaterial(tex.diff, tex.normal)
-                grid.appendChild(btn);
+        async function listTextureFolder(cat, manifest) {
+            const dir = TEX_DIRS[cat];
+            const key = cat === 'faces' ? 'melamine' : 'quartz';
+            if (manifest && Array.isArray(manifest[key])) {
+                return manifest[key].map(e => typeof e === 'string' ? { file: e } : e)
+                    .filter(e => e && e.file)
+                    .map(e => ({ url: dir + '/' + encodeURIComponent(e.file), name: e.name || prettyTexName(e.file), size: e.size }));
+            }
+            // GitHub Pages: <owner>.github.io/<repo>/... -> folder listing through the public API
+            const host = location.hostname;
+            if (!/\.github\.io$/i.test(host)) return null;
+            const owner = host.split('.')[0];
+            const parts = location.pathname.split('/').filter(Boolean);
+            if (parts.length && /\.html?$/i.test(parts[parts.length - 1])) parts.pop();
+            let repo, sub;
+            if (parts.length) { repo = parts[0]; sub = parts.slice(1).join('/'); }
+            else { repo = host; sub = ''; }
+            const api = `https://api.github.com/repos/${owner}/${repo}/contents/${sub ? sub + '/' : ''}${dir}`;
+            const res = await fetch(api);
+            if (!res.ok) throw new Error('GitHub listing ' + res.status);
+            const items = await res.json();
+            return items
+                .filter(it => it.type === 'file' && /\.(jpe?g|png|webp)$/i.test(it.name))
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map(it => ({ url: dir + '/' + encodeURIComponent(it.name), name: prettyTexName(it.name) }));
+        }
+
+        async function initTexturePicker() {
+            const status = document.getElementById('texStatus');
+            let manifest = null;
+            try {
+                const r = await fetch('assets/textures.json', { cache: 'no-cache' });
+                if (r.ok) manifest = await r.json();
+            } catch (e) { /* no manifest: try the folder listing */ }
+
+            const notes = [];
+            for (const cat of ['faces', 'tops']) {
+                const grid = document.getElementById(TEX_GRID[cat]);
+                grid.innerHTML = '';
+                let list = null;
+                try { list = await listTextureFolder(cat, manifest); }
+                catch (e) { console.warn('Texture list failed for', TEX_DIRS[cat], e); }
+                if (!list) { notes.push(`No list for ${TEX_DIRS[cat]} (add assets/textures.json)`); continue; }
+                if (!list.length) { notes.push(`${TEX_DIRS[cat]} is empty`); continue; }
+                list.forEach(t => {
+                    const item = document.createElement('div');
+                    item.className = 'tex-item';
+                    item.title = t.name;
+                    item.dataset.url = t.url;
+                    const img = document.createElement('img');
+                    img.loading = 'lazy';
+                    img.src = t.url;
+                    img.alt = t.name;
+                    const cap = document.createElement('span');
+                    cap.textContent = t.name;
+                    item.appendChild(img);
+                    item.appendChild(cap);
+                    item.onclick = () => applyTexture(cat, t.url, t.size);
+                    grid.appendChild(item);
+                });
+            }
+            status.textContent = notes.join(' · ');
+        }
+
+        function loadTexture(url) {
+            if (texCache.has(url)) return Promise.resolve(texCache.get(url));
+            return new Promise((resolve, reject) => {
+                new THREE.TextureLoader().load(url, (t) => {
+                    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+                    t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+                    texCache.set(url, t);
+                    resolve(t);
+                }, undefined, reject);
             });
         }
 
-        function applyPBRMaterial(diffuseUrl, normalUrl) {
-            if (!selectedMesh || !selectedMesh.material) {
-                alert("Please select an object first!");
-                return;
+        // Box-projected UVs in metres (world space at the time of the first texture): tops use x / z, fronts x / height,
+        // sides depth / height. Geometry is copied first, so meshes that shared it are not affected.
+        function ensureMetricUVs(mesh) {
+            if (mesh.userData._metricUV) return;
+            mesh.geometry = mesh.geometry.clone();
+            const g = mesh.geometry;
+            if (!g.attributes.normal) g.computeVertexNormals();
+            mesh.updateMatrixWorld(true);
+            const pos = g.attributes.position, nor = g.attributes.normal;
+            const nm = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
+            const p = new THREE.Vector3(), n = new THREE.Vector3();
+            const uv = new Float32Array(pos.count * 2);
+            for (let i = 0; i < pos.count; i++) {
+                p.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+                n.fromBufferAttribute(nor, i).applyMatrix3(nm);
+                const ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z);
+                let u, v;
+                if (ay >= ax && ay >= az) { u = p.x; v = p.z; }   // top / bottom
+                else if (ax >= az)        { u = p.z; v = p.y; }   // left / right sides
+                else                      { u = p.x; v = p.y; }   // front / back
+                uv[2 * i] = u; uv[2 * i + 1] = v;
             }
+            g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+            mesh.userData._metricUV = true;
+        }
 
-            const currentRoughness = parseFloat(document.getElementById('roughness').value);
-            const currentMetalness = parseFloat(document.getElementById('metalness').value);
-            const factor = parseFloat(document.getElementById('opacity').value);
-            const isFaceType = isFaceMesh(selectedMesh);
+        function updateTextureRepeat(cat) {
+            const st = texState[cat];
+            if (!st.tex) return;
+            st.tex.repeat.set(1 / st.size, 1 / (st.size * st.aspect));   // size = metres one image WIDTH covers
+            st.tex.needsUpdate = true;
+        }
 
-            const loader = new THREE.TextureLoader();
+        function texMaterial(cat, tex, forStile) {
+            const tops = cat === 'tops';
+            const m = tops
+                ? new THREE.MeshPhysicalMaterial({ map: tex, color: 0xffffff, roughness: 0.2, metalness: 0, clearcoat: 0.6, clearcoatRoughness: 0.1 })
+                : new THREE.MeshStandardMaterial({ map: tex, color: 0xffffff, roughness: 0.55, metalness: 0 });
+            m.side = THREE.DoubleSide;
+            if (envTex) { m.envMap = envTex; m.envMapIntensity = tops ? 0.8 : 0.35; }
+            if (forStile) { m.polygonOffset = true; m.polygonOffsetFactor = -1; m.polygonOffsetUnits = -1; }
+            return m;
+        }
 
-            loader.load(diffuseUrl, (diffuseTex) => {
-                diffuseTex.wrapS = diffuseTex.wrapT = THREE.RepeatWrapping;
-                diffuseTex.repeat.set(2, 2);
-
-                loader.load(normalUrl, (normalTex) => {
-                    normalTex.wrapS = normalTex.wrapT = THREE.RepeatWrapping;
-                    normalTex.repeat.set(2, 2);
-
-                    const createMaterialInstance = () => {
-                        const m = new THREE.MeshStandardMaterial({
-                            map: diffuseTex,
-                            normalMap: normalTex,
-                            normalScale: new THREE.Vector2(0.15, 0.15), 
-                            roughness: currentRoughness,
-                            metalness: currentMetalness,
-                            transparent: factor < 0.999,
-                            depthWrite: true,
-                            side: THREE.DoubleSide
-                        });
-                        m.envMapIntensity = 1.0;
-                        m.userData._opacityCloned = true;
-                        return setMaterialOpacity(m, factor, false);
-                    };
-
-                    if (isFaceType && modelRoot) {
-                        // Apply texture to all front faces synchronously
-                        modelRoot.traverse(o => {
-                            if (o.isMesh && isFaceMesh(o)) {
-                                if (o.material) o.material.dispose();
-                                o.material = createMaterialInstance();
-                            }
-                        });
-                    } else {
-                        // Apply texture to the single targeted structural carcass panel asset
-                        if (selectedMesh.material) selectedMesh.material.dispose();
-                        selectedMesh.material = createMaterialInstance();
-                    }
-                });
+        function markActiveTexture(cat) {
+            document.querySelectorAll('#' + TEX_GRID[cat] + ' .tex-item').forEach(el => {
+                el.classList.toggle('active', el.dataset.url === texState[cat].url);
             });
+        }
+
+        async function applyTexture(cat, url, size) {
+            if (!modelRoot) return;
+            let tex;
+            try { tex = await loadTexture(url); }
+            catch (e) { console.error('Texture failed to load:', url, e); document.getElementById('texStatus').textContent = 'Could not load ' + url; return; }
+
+            const st = texState[cat];
+            st.url = url; st.tex = tex;
+            st.aspect = tex.image && tex.image.width ? tex.image.height / tex.image.width : 1;
+            if (size) {
+                st.size = size;
+                const key = cat === 'faces' ? 'Faces' : 'Tops';
+                document.getElementById('texSize' + key).value = size;
+                document.getElementById('texSize' + key + 'Val').textContent = size.toFixed(2);
+            }
+            updateTextureRepeat(cat);
+
+            const members = groupMembers({ key: cat }, null);
+            const factor = members.length ? getOpacityFactor(members[0].material) : 1;   // keep the group's opacity
+            const plate = texMaterial(cat, tex, false), stile = texMaterial(cat, tex, true);
+            if (factor < 0.999) { setMaterialOpacity(plate, factor, false); setMaterialOpacity(stile, factor, false); }
+            members.forEach(o => {
+                ensureMetricUVs(o);
+                o.material = o.userData.role === 'visual' ? stile : plate;
+                o.userData._ownMat = true;   // one material for the whole group: colour / opacity edits stay inside it
+            });
+            markActiveTexture(cat);
+            if (selectedMesh && members.includes(selectedMesh)) selectMesh(selectedMesh);   // refresh roughness / metalness
+        }
+
+        // "None": the group goes back to the file's material (keeping its opacity)
+        function clearTexture(cat) {
+            groupMembers({ key: cat }, null).forEach(o => restoreFileMaterial(o, getOpacityFactor(o.material)));
+            texState[cat].url = null; texState[cat].tex = null;
+            markActiveTexture(cat);
+        }
+
+        function onTextureSize(cat) {
+            const key = cat === 'faces' ? 'Faces' : 'Tops';
+            const v = parseFloat(document.getElementById('texSize' + key).value);
+            document.getElementById('texSize' + key + 'Val').textContent = v.toFixed(2);
+            texState[cat].size = v;
+            updateTextureRepeat(cat);
         }
 
         function init() {
@@ -732,7 +880,7 @@
             createHoverLabel();
 
             setupListeners();
-            createTextureButtons();
+            initTexturePicker();
             loadModelsJSON();        // ← Load from models.json
             animate();
         }
@@ -756,6 +904,12 @@
             document.getElementById('applyColor').addEventListener('click', applyColor);
             document.getElementById('resetColors').addEventListener('click', resetColors);
             document.getElementById('resetMaterial').addEventListener('click', resetMaterial);
+
+            // Textures
+            document.getElementById('texClearFaces').addEventListener('click', () => clearTexture('faces'));
+            document.getElementById('texClearTops').addEventListener('click', () => clearTexture('tops'));
+            document.getElementById('texSizeFaces').addEventListener('input', () => onTextureSize('faces'));
+            document.getElementById('texSizeTops').addEventListener('input', () => onTextureSize('tops'));
             document.getElementById('resetAll').addEventListener('click', resetAllLighting);
 
             // Opacity
@@ -1264,6 +1418,7 @@
             const g = groupOf(selectedMesh);
             if (!g || !g.paint) return;
             const hex = document.getElementById('colorPicker').value;
+            if (texState[g.key]) { texState[g.key].url = null; texState[g.key].tex = null; markActiveTexture(g.key); }   // colour replaces the texture
             groupMembers(g, selectedMesh).forEach(mesh => {
                 ownMaterials(mesh);
                 getMats(mesh).forEach(m => {
@@ -1302,19 +1457,10 @@
             doorAnimations = []; 
 
             scene.traverse((obj) => {
-                if (obj.isMesh && obj.material && obj.userData._orig) {
-                    const o = obj.userData._orig;
-                    getMats(obj).forEach(m => {
-                        if (m.color && o.color !== null) m.color.setHex(o.color);
-                        if (m.map) m.map = null;
-                        if (m.normalMap) m.normalMap = null;
-                        if (o.roughness !== undefined && m.roughness !== undefined) m.roughness = o.roughness;
-                        if (o.metalness !== undefined && m.metalness !== undefined) m.metalness = o.metalness;
-                        m.needsUpdate = true;
-                    });
-                }
+                if (obj.isMesh && obj.material) restoreFileMaterial(obj);
                 if (obj.isMesh) obj.visible = true;
             });
+            ['faces', 'tops'].forEach(cat => { texState[cat].url = null; texState[cat].tex = null; markActiveTexture(cat); });
             
             document.getElementById('toggleDoorsVisible').checked = true;
             document.getElementById('enableMotion').checked = false;
@@ -1325,10 +1471,11 @@
 
         function resetColors() {
             // back to the colours in the file (design colours for Cabinet Designer files)
+            // (textures count as colour: they go too; each group keeps its opacity)
             scene.traverse(o => {
-                if (!o.isMesh || !o.userData._orig || o.userData._orig.color === null) return;
-                getMats(o).forEach(m => { if (m.color) m.color.setHex(o.userData._orig.color); });
+                if (o.isMesh && o.material) restoreFileMaterial(o, getOpacityFactor(o.material));
             });
+            ['faces', 'tops'].forEach(cat => { texState[cat].url = null; texState[cat].tex = null; markActiveTexture(cat); });
         }
 
         function resetAllLighting() {
