@@ -67,6 +67,11 @@
         }
         .view-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
         .view-grid button { padding: 8px 4px; margin: 0; font-size: 13px; cursor: pointer; }
+        #watermark {
+            position: fixed; left: 50%; bottom: 7%; transform: translateX(-50%);
+            font: 600 15px Arial, sans-serif; letter-spacing: 0.25em; color: rgba(0,0,0,0.14);
+            pointer-events: none; user-select: none; white-space: nowrap; z-index: 50;
+        }
         .view-grid kbd {
             display: inline-block; margin-left: 4px; padding: 0 5px; font-size: 11px;
             background: rgba(255,255,255,0.18); border-radius: 3px; font-family: monospace;
@@ -75,10 +80,11 @@
 </head>
 <body>
     <button id="toggleUI" title="Toggle UI">👁</button>
+    <div id="watermark" aria-hidden="true">KitchenTrends.co.za</div>
 
     <div id="ui">
         <h2 style="margin:0 0 8px 0;">🎨 KitchenTrends <br>
-        Hein 📡 079 999 2215_1</h2>
+        Hein 📡 079 999 2215_11 Nov</h2>
         <small id="modelName" style="color:#aaa;">Loading model list...</small>
         
         <div class="section">
@@ -88,6 +94,7 @@
         </div>
 
         <div class="section">
+            <small id="selInfo" style="display:block; color:#aaa; margin-bottom:6px;">Click an item to select its group</small>
             <input type="color" id="colorPicker" value="#e8d5b8" style="height:45px;width:100%;">
             <button id="applyColor">Apply Color</button>
             <button id="resetColors">Reset Colors</button>
@@ -111,11 +118,8 @@
         <div class="section">
             <h3 style="margin:0 0 8px 0;">Transparency</h3>
             <label>Opacity <span id="opacityVal">100</span>%</label>
-            <input type="range" id="opacity" min="0.05" max="1" step="0.01" value="1">
-            <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-                <input type="checkbox" id="opacitySelectedOnly" style="width:auto; margin:0;">
-                Selected object only
-            </label>
+            <input type="range" id="opacity" min="0.05" max="1" step="0.01" value="1" disabled>
+            <small id="opacityHint" style="display:block; color:#aaa;">Select a door / drawer / face, or a wall</small>
             <!-- 15 10 06 Add the structural styles toggle right here -->
             <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-top:10px; color:#5cf27e; font-weight:bold;">
                 <input type="checkbox" id="toggleDoorsVisible" checked style="width:auto; margin:0;">
@@ -267,6 +271,98 @@
             return raycaster.intersectObjects(scene.children, true).filter(h => !isComponentObj(h.object));
         }
 
+        // --- SELECTION GROUPS ---
+        // Clicking any item selects its whole group:
+        //   faces : doors, drawers, stiles, Exposed panels, SLOPED Front board (isFaceMesh)
+        //   tops  : worktops (look "top"; Blender files: name starting "Worktop")
+        //   comp:<kind> : components of the same kind (walls, windows, doors ...); appliances are not paintable
+        //   single: any other panel (carcass, shelves ...) is coloured on its own, as before
+        function componentRootOf(o) {
+            let p = o;
+            while (p) {
+                if (p.userData && p.userData.is_component === true && p.userData.kind !== undefined) return p;
+                p = p.parent;
+            }
+            return null;
+        }
+        function isTopMesh(o) {
+            const u = o && o.userData;
+            if (!u || isComponentObj(o)) return false;
+            if (u.look !== undefined) return u.look === "top";
+            return /^worktop/i.test(o.name || "");
+        }
+        function groupOf(mesh) {
+            if (!mesh) return null;
+            if (isComponentObj(mesh)) {
+                const r = componentRootOf(mesh);
+                const kind = r ? String(r.userData.kind) : "component";
+                if (kind.indexOf("appliance") === 0) return { key: "appliance", label: "Appliance (not paintable)", paint: false, fade: false };
+                const nice = kind.charAt(0).toUpperCase() + kind.slice(1) + "s";
+                return { key: "comp:" + kind, kind, label: nice, paint: true, fade: true };
+            }
+            if (isFaceMesh(mesh)) return { key: "faces", label: "Faces (doors, drawers, stiles, exposed)", paint: true, fade: true };
+            if (isTopMesh(mesh)) return { key: "tops", label: "Tops (worktops)", paint: true, fade: false };
+            return { key: "single", label: "Panel: " + (mesh.name || "part"), paint: true, fade: false };
+        }
+        function groupMembers(g, picked) {
+            if (!g || !modelRoot) return [];
+            if (g.key === "single") return [picked];
+            const out = [];
+            modelRoot.traverse(o => {
+                if (!o.isMesh || !o.material) return;
+                if (g.key === "faces" ? (!isComponentObj(o) && isFaceMesh(o))
+                    : g.key === "tops" ? isTopMesh(o)
+                    : g.key.indexOf("comp:") === 0 ? (isComponentObj(o) && (componentRootOf(o)?.userData.kind === g.kind))
+                    : false) out.push(o);
+            });
+            return out;
+        }
+        // Give a mesh its own material before editing it (Blender files share materials between unrelated panels)
+        function ownMaterials(mesh) {
+            if (mesh.userData._ownMat) return;
+            const mats = getMats(mesh).map(m => m.clone());
+            mesh.material = mats.length === 1 ? mats[0] : mats;
+            mesh.userData._ownMat = true;
+        }
+
+        function selectMesh(obj) {
+            selectedMesh = obj;
+            const g = groupOf(obj);
+            document.getElementById('selInfo').textContent = "Selected: " + (g ? g.label : "-");
+            syncOpacitySlider();
+            const mat = getMats(obj)[0];
+            if (mat && mat.roughness !== undefined) {
+                document.getElementById('roughness').value = mat.roughness;
+                document.getElementById('roughVal').textContent = mat.roughness.toFixed(2);
+            }
+            if (mat && mat.metalness !== undefined) {
+                document.getElementById('metalness').value = mat.metalness;
+                document.getElementById('metalVal').textContent = mat.metalness.toFixed(2);
+            }
+        }
+
+        // Called once per load: remember the file's own look (resets go back to it), keep stiles in front of their
+        // door / drawer plate (the app uses a polygon offset; glTF cannot carry it), and let see-through components
+        // stop writing depth so they never hide faded faces behind them.
+        function prepareMaterials(root) {
+            root.traverse(o => {
+                if (!o.isMesh || !o.material) return;
+                const m = getMats(o)[0];
+                o.userData._orig = {
+                    color: m.color ? m.color.getHex() : null,
+                    roughness: m.roughness, metalness: m.metalness
+                };
+                if (o.userData.role === "visual") {
+                    ownMaterials(o);
+                    getMats(o).forEach(mm => { mm.polygonOffset = true; mm.polygonOffsetFactor = -1; mm.polygonOffsetUnits = -1; });
+                }
+                if (isComponentObj(o)) {
+                    ownMaterials(o);
+                    getMats(o).forEach(mm => { mm.depthWrite = !mm.transparent; mm.needsUpdate = true; });
+                }
+            });
+        }
+
         // --- HOVER LABEL ---
         function createHoverLabel() {
             const div = document.createElement('div');
@@ -331,6 +427,13 @@
             
             raycaster.setFromCamera(mouse, camera);
             const hits = pickHits(raycaster);
+
+            // Components (walls, windows ...) stay click-through: a wall is only selected where no unit is behind it
+            if (hits.length === 0) {
+                const compHit = raycaster.intersectObjects(scene.children, true).find(h => isComponentObj(h.object) && h.object.isMesh);
+                if (compHit) selectMesh(compHit.object);
+                return;
+            }
             
             if (hits.length > 0) {
                 let obj = hits[0].object;
@@ -361,19 +464,7 @@
                     obj = obj.parent;
                 }
                 
-                if (obj && obj.material) {
-                    selectedMesh = obj;
-                    syncOpacitySlider();
-                    
-                    if (selectedMesh.material.roughness !== undefined) {
-                        document.getElementById('roughness').value = selectedMesh.material.roughness;
-                        document.getElementById('roughVal').textContent = selectedMesh.material.roughness.toFixed(2);
-                    }
-                    if (selectedMesh.material.metalness !== undefined) {
-                        document.getElementById('metalness').value = selectedMesh.material.metalness;
-                        document.getElementById('metalVal').textContent = selectedMesh.material.metalness.toFixed(2);
-                    }
-                }
+                if (obj && obj.material) selectMesh(obj);
             }
         }
 
@@ -589,6 +680,7 @@
                 tagComponents(model);
                 applyComponentEnv(model);
                 linkVisualsToOwners(model);
+                linkDrawerInternals(model);
 
                 // Add dimension labels
                 model.traverse((child) => {
@@ -621,6 +713,7 @@
                         }
                     }
                 });
+                prepareMaterials(model);
             }, undefined, (e) => {
                 console.error("Failed to load", currentModel, e);
                 // Optional fallback
@@ -631,6 +724,8 @@
                         tagComponents(modelRoot);
                         applyComponentEnv(modelRoot);
                         linkVisualsToOwners(modelRoot);
+                        linkDrawerInternals(modelRoot);
+                        prepareMaterials(modelRoot);
                     }, undefined, (e) => console.error(e));
                 }
             });
@@ -665,7 +760,6 @@
 
             // Opacity
             document.getElementById('opacity').addEventListener('input', updateOpacity);
-            document.getElementById('opacitySelectedOnly').addEventListener('change', syncOpacitySlider);
 
             // 1510_08 Add the visibility toggle execution listener hook here
             document.getElementById('toggleDoorsVisible').addEventListener('change', updateDoorsVisibility);
@@ -750,9 +844,10 @@
             targetMat.userData.opacityFactor = factor;
             targetMat.opacity = targetMat.userData.baseOpacity * factor;
             
-            // Set rendering states explicitly to handle internal depth sort layers safely
-            targetMat.transparent = factor < 0.999;
-            targetMat.depthWrite = true; 
+            // See-through = the RESULT is below 1 (a wall is 35 % in the file even at factor 1). A see-through
+            // material must not write depth, or it hides whatever is drawn after it (the old flicker / vanishing).
+            targetMat.transparent = targetMat.opacity < 0.999 || targetMat.userData.baseTransparent === true;
+            targetMat.depthWrite = !targetMat.transparent;
             targetMat.side = THREE.DoubleSide; 
             targetMat.needsUpdate = true;
 
@@ -760,42 +855,16 @@
         }
 
 
+        // Opacity works on the selected GROUP, and only for faces (doors, drawers, stiles, exposed) and components (walls ...)
         function updateOpacity() {
             const factor = parseFloat(document.getElementById('opacity').value);
             document.getElementById('opacityVal').textContent = Math.round(factor * 100);
-
-            const selectedOnly = document.getElementById('opacitySelectedOnly').checked;
-
-            if (selectedOnly) {
-                if (!selectedMesh) return;
-                
-                const isFaceType = isFaceMesh(selectedMesh);
-
-                if (isFaceType && modelRoot) {
-                    // LINKED FACES BEHAVIOUR: Process all dynamic front panels inside the scene together
-                    modelRoot.traverse(o => {
-                        if (o.isMesh && o.material && isFaceMesh(o)) {
-                            const mats = getMats(o);
-                            const newMats = mats.map(m => setMaterialOpacity(m, factor, true));
-                            o.material = newMats.length === 1 ? newMats[0] : newMats;
-                        }
-                    });
-                } else {
-                    // CARCASS BEHAVIOUR: Isolate updates to the singular cabinet slab part targeted
-                    const mats = getMats(selectedMesh);
-                    const newMats = mats.map(m => setMaterialOpacity(m, factor, true));
-                    selectedMesh.material = newMats.length === 1 ? newMats[0] : newMats;
-                }
-            } else if (modelRoot) {
-                // GLOBAL OPACITY: Safe traversal pass across the complete scene tree structure
-                modelRoot.traverse(o => {
-                    if (o.isMesh && o.material && !isComponentObj(o)) {
-                        const mats = getMats(o);
-                        const newMats = mats.map(m => setMaterialOpacity(m, factor, true));
-                        o.material = newMats.length === 1 ? newMats[0] : newMats;
-                    }
-                });
-            }
+            const g = groupOf(selectedMesh);
+            if (!g || !g.fade) return;
+            groupMembers(g, selectedMesh).forEach(o => {
+                ownMaterials(o);
+                getMats(o).forEach(m => setMaterialOpacity(m, factor, false));
+            });
         }
 
         function updateDoorsVisibility() {
@@ -824,11 +893,13 @@
             return null;
         }
 
-        // "Face" = door, drawer or stile. Used for linked colour / texture / opacity.
+        // "Face" = door, drawer or stile, plus anything a Cabinet Designer file marks look "face"
+        // (Exposed panels, the SLOPED Front board). Used for linked colour / texture / opacity.
         function isFaceMesh(o) {
             if (!o || !o.userData) return false;
-            return o.userData.role === "visual" || panelKind(o) !== null;
+            return o.userData.role === "visual" || panelKind(o) !== null || o.userData.look === "face";
         }
+
 
         // Attach every visual piece to its owner front (matching part_id within the same unit),
         // keeping its world transform. No-op when the exporter already parented it correctly.
@@ -849,11 +920,66 @@
             let moved = 0, orphans = 0;
             visuals.forEach(v => {
                 const owner = fronts.get(unitOf(v) + "|" + v.userData.owner_id);
-                console.log("owner=",owner);
                 if (!owner) { orphans++; return; }
                 if (v.parent !== owner) { owner.attach(v); moved++; }
             });
             console.log("Stiles: " + visuals.length + " total, " + moved + " re-attached, " + orphans + " without owner");
+        }
+
+        // Drawer internals (Inner_*, Draw_Base_*) slide with their drawer front, like the app's Viewer Mode.
+        // Cabinet Designer files name the front in "follows"; Blender files (no "look" / "follows" extras) are matched
+        // by overlap: the drawer front whose width x height overlaps the internal most. Internals are NOT children of the
+        // front, so "Show Doors & Drawers" still leaves them visible (as in the app).
+        function linkDrawerInternals(root) {
+            root.updateMatrixWorld(true);
+            const units = [];
+            root.traverse(o => { if (o.userData && o.userData.is_unit === true) units.push(o); });
+            let linked = 0;
+            units.forEach(unit => {
+                const drawerFronts = [], internals = [], byPart = new Map();
+                let designerFile = false;
+                unit.traverse(o => {
+                    if (!o.isMesh || !o.userData) return;
+                    if (o.userData.look !== undefined || o.userData.follows !== undefined) designerFile = true;
+                    if (panelKind(o) === "Drawer") {
+                        drawerFronts.push(o);
+                        if (o.userData.part_id) byPart.set(o.userData.part_id, o);
+                    } else if (o.userData.role !== "visual" && /^(inner_|draw_base)/i.test(o.name || "")) {
+                        internals.push(o);
+                    }
+                });
+                const follow = (inner, front) => {
+                    if (inner.parent !== front.parent) front.parent.attach(inner);   // same frame, so the same z delta works
+                    (front.userData._followers = front.userData._followers || []).push(inner);
+                    linked++;
+                };
+                if (designerFile) {
+                    unit.traverse(o => {
+                        if (!o.isMesh || !o.userData || !o.userData.follows) return;
+                        const front = byPart.get(o.userData.follows);
+                        if (front) follow(o, front);
+                    });
+                    return;
+                }
+                // Blender file: unit-root frame, x = width, y = height
+                const inv = unit.matrixWorld.clone().invert();
+                const boxIn = (o) => {
+                    o.geometry.computeBoundingBox();
+                    return o.geometry.boundingBox.clone().applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
+                };
+                const fronts = drawerFronts.map(f => ({ f, b: boxIn(f) }));
+                internals.forEach(i => {
+                    const b = boxIn(i);
+                    let best = null, bestArea = 0;
+                    fronts.forEach(({ f, b: fb }) => {
+                        const dx = Math.min(b.max.x, fb.max.x) - Math.max(b.min.x, fb.min.x);
+                        const dy = Math.min(b.max.y, fb.max.y) - Math.max(b.min.y, fb.min.y);
+                        if (dx > 0 && dy > 0 && dx * dy > bestArea) { bestArea = dx * dy; best = f; }
+                    });
+                    if (best) follow(i, best);
+                });
+            });
+            console.log("Drawer internals linked: " + linked);
         }
 
         function getOrCreateHinge(mesh) {
@@ -900,7 +1026,8 @@
                 // Fallback to 0.45m pull-out value if metadata is missing
                 targetOffset: mesh.userData.slide_depth || 0.45, 
                 currentZ: mesh.position.z,
-                targetZ: mesh.position.z
+                targetZ: mesh.position.z,
+                followers: (mesh.userData._followers || []).map(f => ({ mesh: f, initialZ: f.position.z }))
             };
 
             drawers.set(mesh, drawerData);
@@ -979,15 +1106,23 @@
                         item.currentZ += delta * 0.15;
                     }
                     item.mesh.position.z = item.currentZ;
+                    const dz = item.currentZ - item.initialZ;
+                    item.followers.forEach(f => { f.mesh.position.z = f.initialZ + dz; });
                 }
             }
         }
 
 
         function syncOpacitySlider() {
-            if (!document.getElementById('opacitySelectedOnly').checked || !selectedMesh) return;
-            const f = getOpacityFactor(selectedMesh.material);
-            document.getElementById('opacity').value = f;
+            const g = groupOf(selectedMesh);
+            const slider = document.getElementById('opacity');
+            const on = !!(g && g.fade);
+            slider.disabled = !on;
+            document.getElementById('opacityHint').textContent = on
+                ? "Applies to: " + g.label
+                : "Select a door / drawer / face, or a wall";
+            const f = on ? getOpacityFactor(selectedMesh.material) : 1;
+            slider.value = f;
             document.getElementById('opacityVal').textContent = Math.round(f * 100);
         }
 
@@ -995,7 +1130,10 @@
             document.getElementById('opacity').value = 1;
             document.getElementById('opacityVal').textContent = 100;
             if (modelRoot) {
-                modelRoot.traverse(o => { if (!isComponentObj(o)) getMats(o).forEach(m => setMaterialOpacity(m, 1, false)); });
+                modelRoot.traverse(o => {
+                    if (!o.isMesh || !o.material) return;
+                    getMats(o).forEach(m => { if (m.userData.baseOpacity !== undefined) setMaterialOpacity(m, 1, false); });
+                });
             }
         }
 
@@ -1120,21 +1258,19 @@
             document.getElementById('elVal').textContent = document.getElementById('elevation').value;
         }
 
+        // Colour the whole group of the selected item (faces / tops / walls ...); any other panel on its own
         function applyColor() {
             if (!selectedMesh?.material) return;
+            const g = groupOf(selectedMesh);
+            if (!g || !g.paint) return;
             const hex = document.getElementById('colorPicker').value;
-            const paint = (mesh) => {
+            groupMembers(g, selectedMesh).forEach(mesh => {
+                ownMaterials(mesh);
                 getMats(mesh).forEach(m => {
                     if (m.color) m.color.set(hex);
                     if (m.map) { m.map = null; m.needsUpdate = true; }
                 });
-            };
-            if (isFaceMesh(selectedMesh) && modelRoot) {
-                // Doors, drawers and stiles are always coloured together
-                modelRoot.traverse(o => { if (o.isMesh && o.material && isFaceMesh(o)) paint(o); });
-            } else {
-                paint(selectedMesh);
-            }
+            });
         }
 
         function updatePBR() {
@@ -1160,17 +1296,22 @@
                 d.currentZ = d.initialZ;
                 d.targetZ = d.initialZ;
                 d.mesh.position.z = d.initialZ;
+                d.followers.forEach(f => { f.mesh.position.z = f.initialZ; });
             });
             
             doorAnimations = []; 
 
             scene.traverse((obj) => {
-                if (obj.material && !isComponentObj(obj)) {
-                    obj.material.color.set(0xeeeeee);
-                    obj.material.map = null;
-                    obj.material.normalMap = null;
-                    obj.material.roughness = 0.7;
-                    obj.material.metalness = 0.1;
+                if (obj.isMesh && obj.material && obj.userData._orig) {
+                    const o = obj.userData._orig;
+                    getMats(obj).forEach(m => {
+                        if (m.color && o.color !== null) m.color.setHex(o.color);
+                        if (m.map) m.map = null;
+                        if (m.normalMap) m.normalMap = null;
+                        if (o.roughness !== undefined && m.roughness !== undefined) m.roughness = o.roughness;
+                        if (o.metalness !== undefined && m.metalness !== undefined) m.metalness = o.metalness;
+                        m.needsUpdate = true;
+                    });
                 }
                 if (obj.isMesh) obj.visible = true;
             });
@@ -1183,7 +1324,11 @@
 
 
         function resetColors() {
-            scene.traverse(o => { if (o.material?.color && !isComponentObj(o)) o.material.color.set(0xeeeeee); });
+            // back to the colours in the file (design colours for Cabinet Designer files)
+            scene.traverse(o => {
+                if (!o.isMesh || !o.userData._orig || o.userData._orig.color === null) return;
+                getMats(o).forEach(m => { if (m.color) m.color.setHex(o.userData._orig.color); });
+            });
         }
 
         function resetAllLighting() {
