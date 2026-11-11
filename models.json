@@ -1,31 +1,17 @@
 {
   "models": [
     {
+      "id": "Jacqueline",
+      "name": "Jacqueline",
+      "file": "Jacqueline.glb",
+      "timestamp": "2026-11-11",
+      "unitCount": 19
+    },
+    {
       "id": "Trudie",
       "name": "Trudie",
       "file": "Trudie.glb",
       "timestamp": "2026-10-17",
-      "unitCount": 12
-    },
-    {
-      "id": "GlbTest",
-      "name": "GlbTest",
-      "file": "GlbTest.glb",
-      "timestamp": "2026-10-22",
-      "unitCount": 12
-    },
-    {
-      "id": "GlbTest1",
-      "name": "GlbTest1",
-      "file": "GlbTest1.glb",
-      "timestamp": "2026-10-22",
-      "unitCount": 12
-    },
-    {
-      "id": "GlbTest2",
-      "name": "GlbTest2",
-      "file": "GlbTest2.glb",
-      "timestamp": "2026-10-23",
       "unitCount": 12
     },
     {
@@ -34,13 +20,6 @@
       "file": "Oelofse.glb",
       "timestamp": "2026-10-10",
       "unitCount": 6
-    },
-    {
-      "id": "Test00",
-      "name": "Test00",
-      "file": "Test00.glb",
-      "timestamp": "2026-16-10",
-      "unitCount": 2
     },
     {
       "id": "Mooikloof_Kombuis",
